@@ -1,17 +1,22 @@
 import os
+import re
+import secrets
 import shutil
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Header
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from database import (
     get_all_files, get_file_by_id, insert_file, update_file,
-    delete_file_record, get_settings, update_settings, ensure_db
+    delete_file_record, get_settings, update_settings, ensure_db,
+    get_vault_files, get_vault_file_by_id, get_vault_retention_days,
+    set_vault_retention_days, get_all_shares, get_share_by_id,
+    insert_share, update_share, delete_share_record
 )
 from document_reader import extract_document_text, categorize_file_type
 from ai_engine import analyze_document_context
@@ -33,10 +38,14 @@ app.add_middleware(
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+SHARES_DIR = os.path.join(STORAGE_DIR, "shares")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 os.makedirs(STORAGE_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
+
+E2EE_MAGIC = b"AE2E\x01"
+VAULT_ID_RE = re.compile(r"^[a-fA-F0-9]{16,64}$")
 
 # Pydantic Schemas
 class RenameRequest(BaseModel):
@@ -418,6 +427,391 @@ def download_file(file_id: str):
         filename=file_record.get("filename"),
         media_type="application/octet-stream"
     )
+
+# ==============================================================================
+# Zero-Knowledge End-to-End Encryption (E2EE) Vault & Encrypted Sharing API
+# ==============================================================================
+
+class E2EEFileUpdateRequest(BaseModel):
+    encrypted_meta: Optional[str] = None
+    is_protected: Optional[bool] = None
+    extended_until: Optional[str] = None
+    clear_extended_until: Optional[bool] = False
+    created_at: Optional[str] = None
+
+
+class E2EERetentionItem(BaseModel):
+    id: str
+    encrypted_meta: Optional[str] = None
+    is_protected: Optional[bool] = None
+
+
+class E2EERetentionActionRequest(BaseModel):
+    action: str  # 'delete', 'extend', 'protect'
+    items: List[E2EERetentionItem]
+    custom_extension_days: Optional[int] = 30
+
+
+def _require_vault_id(x_vault_id: Optional[str]) -> str:
+    if not x_vault_id or not VAULT_ID_RE.match(x_vault_id.strip()):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-Vault-Id header")
+    return x_vault_id.strip().lower()
+
+
+def _public_e2ee_record(rec: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(rec)
+    out.pop("storage_path", None)
+    return out
+
+
+def _validate_e2ee_blob(raw_bytes: bytes):
+    # AE2E (4B) + version 0x01 (1B) + 96-bit IV (12B) + 128-bit GCM auth tag (16B) = min 33 bytes
+    if len(raw_bytes) < 33 or raw_bytes[:5] != E2EE_MAGIC:
+        raise HTTPException(
+            status_code=400,
+            detail="Rejected: payload is not a valid AE2E v1 AES-256-GCM ciphertext envelope"
+        )
+
+
+@app.get("/api/e2ee/files")
+def list_e2ee_files(x_vault_id: Optional[str] = Header(None)):
+    vault_id = _require_vault_id(x_vault_id)
+    files = [_public_e2ee_record(f) for f in get_vault_files(vault_id)]
+    return {
+        "retention_days": get_vault_retention_days(vault_id),
+        "files": files
+    }
+
+
+@app.post("/api/e2ee/files")
+async def upload_e2ee_file(
+    encrypted_blob: UploadFile = File(...),
+    encrypted_meta: str = Form(...),
+    size_bytes: int = Form(0),
+    is_protected: bool = Form(False),
+    x_vault_id: Optional[str] = Header(None)
+):
+    vault_id = _require_vault_id(x_vault_id)
+    cipher_bytes = await encrypted_blob.read()
+    _validate_e2ee_blob(cipher_bytes)
+    if not encrypted_meta or len(encrypted_meta) < 24:
+        raise HTTPException(status_code=400, detail="Missing encrypted metadata envelope")
+
+    file_id = str(uuid.uuid4())
+    disk_name = f"{file_id}.enc"
+    dest_path = os.path.join(STORAGE_DIR, disk_name)
+    with open(dest_path, "wb") as f:
+        f.write(cipher_bytes)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    record = {
+        "id": file_id,
+        "vault_id": vault_id,
+        "e2ee": True,
+        "cipher": "AES-256-GCM",
+        "kdf": "PBKDF2-SHA256-210000",
+        "storage_path": dest_path,
+        "encrypted_meta": encrypted_meta,
+        "size_bytes": max(0, int(size_bytes)),
+        "cipher_size_bytes": len(cipher_bytes),
+        "is_protected": bool(is_protected),
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "extended_until": None
+    }
+    insert_file(record)
+    return _public_e2ee_record(record)
+
+
+@app.get("/api/e2ee/files/{file_id}/blob")
+def download_e2ee_blob(file_id: str, x_vault_id: Optional[str] = Header(None)):
+    vault_id = _require_vault_id(x_vault_id)
+    rec = get_vault_file_by_id(file_id, vault_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Encrypted file not found in this vault")
+    storage_path = rec.get("storage_path")
+    if not storage_path or not os.path.exists(storage_path):
+        raise HTTPException(status_code=404, detail="Encrypted blob missing on disk")
+    return FileResponse(path=storage_path, filename=f"{file_id}.enc", media_type="application/octet-stream")
+
+
+@app.get("/api/e2ee/files/{file_id}/proof")
+def inspect_e2ee_server_proof(file_id: str, x_vault_id: Optional[str] = Header(None)):
+    vault_id = _require_vault_id(x_vault_id)
+    rec = get_vault_file_by_id(file_id, vault_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Encrypted file not found")
+    storage_path = rec.get("storage_path")
+    if not storage_path or not os.path.exists(storage_path):
+        raise HTTPException(status_code=404, detail="Encrypted blob missing on disk")
+
+    with open(storage_path, "rb") as f:
+        head = f.read(65)
+
+    return {
+        "file_id": file_id,
+        "disk_filename": os.path.basename(storage_path),
+        "e2ee": bool(rec.get("e2ee", True)),
+        "cipher": rec.get("cipher", "AES-256-GCM"),
+        "kdf": rec.get("kdf", "PBKDF2-SHA256-210000"),
+        "magic_header_hex": head[:5].hex(),
+        "blob_iv_hex": head[5:17].hex(),
+        "ciphertext_sample_hex": head[17:49].hex(),
+        "cipher_size_bytes": os.path.getsize(storage_path),
+        "encrypted_meta_preview": (rec.get("encrypted_meta") or "")[:96] + "...",
+        "server_visible_fields": sorted([k for k in rec.keys() if k != "storage_path"]),
+        "plaintext_stored_on_server": False
+    }
+
+
+@app.put("/api/e2ee/files/{file_id}")
+def update_e2ee_file(
+    file_id: str,
+    payload: E2EEFileUpdateRequest,
+    x_vault_id: Optional[str] = Header(None)
+):
+    vault_id = _require_vault_id(x_vault_id)
+    rec = get_vault_file_by_id(file_id, vault_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Encrypted file not found")
+
+    updates: Dict[str, Any] = {}
+    if payload.encrypted_meta is not None:
+        if len(payload.encrypted_meta) < 24:
+            raise HTTPException(status_code=400, detail="Invalid encrypted_meta")
+        updates["encrypted_meta"] = payload.encrypted_meta
+    if payload.is_protected is not None:
+        updates["is_protected"] = bool(payload.is_protected)
+    if payload.clear_extended_until:
+        updates["extended_until"] = None
+    elif payload.extended_until is not None:
+        updates["extended_until"] = payload.extended_until
+    if payload.created_at is not None:
+        updates["created_at"] = payload.created_at
+
+    updated = update_file(file_id, updates)
+    return _public_e2ee_record(updated)
+
+
+@app.delete("/api/e2ee/files/{file_id}")
+def delete_e2ee_file(file_id: str, x_vault_id: Optional[str] = Header(None)):
+    vault_id = _require_vault_id(x_vault_id)
+    rec = get_vault_file_by_id(file_id, vault_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Encrypted file not found")
+
+    storage_path = rec.get("storage_path")
+    if storage_path and os.path.exists(storage_path):
+        try:
+            os.remove(storage_path)
+        except Exception:
+            pass
+    delete_file_record(file_id)
+    return {"message": "Encrypted file deleted", "id": file_id}
+
+
+@app.post("/api/e2ee/retention/settings")
+def update_e2ee_retention_settings(
+    payload: RetentionSettingsRequest,
+    x_vault_id: Optional[str] = Header(None)
+):
+    vault_id = _require_vault_id(x_vault_id)
+    if payload.retention_days < 1 or payload.retention_days > 365:
+        raise HTTPException(status_code=400, detail="Retention days must be between 1 and 365")
+    days = set_vault_retention_days(vault_id, payload.retention_days)
+    return {"message": f"Retention policy updated to {days} days", "settings": {"retention_days": days}}
+
+
+@app.post("/api/e2ee/retention/action")
+def perform_e2ee_retention_action(
+    payload: E2EERetentionActionRequest,
+    x_vault_id: Optional[str] = Header(None)
+):
+    vault_id = _require_vault_id(x_vault_id)
+    results = {"success": [], "skipped_protected": [], "errors": []}
+    now = datetime.now(timezone.utc)
+
+    for item in payload.items:
+        rec = get_vault_file_by_id(item.id, vault_id)
+        if not rec:
+            results["errors"].append({"id": item.id, "error": "Not found"})
+            continue
+
+        if payload.action == "delete":
+            if rec.get("is_protected", False):
+                results["skipped_protected"].append({
+                    "id": item.id,
+                    "reason": "File is protected with 'important' tag"
+                })
+                continue
+            storage_path = rec.get("storage_path")
+            if storage_path and os.path.exists(storage_path):
+                try:
+                    os.remove(storage_path)
+                except Exception as e:
+                    results["errors"].append({"id": item.id, "error": str(e)})
+                    continue
+            delete_file_record(item.id)
+            results["success"].append({"id": item.id, "action": "deleted"})
+
+        elif payload.action == "extend":
+            ext_days = payload.custom_extension_days or 30
+            new_ext = (now + timedelta(days=ext_days)).isoformat()
+            update_file(item.id, {"extended_until": new_ext})
+            results["success"].append({"id": item.id, "action": f"extended_{ext_days}_days"})
+
+        elif payload.action == "protect":
+            updates: Dict[str, Any] = {"is_protected": True}
+            if item.encrypted_meta:
+                updates["encrypted_meta"] = item.encrypted_meta
+            update_file(item.id, updates)
+            results["success"].append({"id": item.id, "action": "marked_important"})
+
+    return results
+
+
+# Zero-Knowledge Encrypted File Share Links (Key stays strictly in URL #fragment)
+def _purge_expired_shares():
+    now = datetime.now(timezone.utc)
+    for s in list(get_all_shares()):
+        exp_str = s.get("expires_at")
+        expired = False
+        if exp_str:
+            try:
+                exp_dt = datetime.fromisoformat(exp_str.replace("Z", "+00:00"))
+                expired = now >= exp_dt
+            except Exception:
+                expired = False
+        if expired:
+            sp = s.get("storage_path")
+            if sp and os.path.exists(sp):
+                try:
+                    os.remove(sp)
+                except Exception:
+                    pass
+            delete_share_record(s.get("share_id", ""))
+    if os.path.exists(SHARES_DIR) and not os.listdir(SHARES_DIR):
+        try:
+            os.rmdir(SHARES_DIR)
+        except Exception:
+            pass
+
+
+@app.post("/api/shares")
+async def create_encrypted_share(
+    encrypted_blob: UploadFile = File(...),
+    encrypted_meta: str = Form(...),
+    expires_in_hours: int = Form(168),
+    burn_after_download: bool = Form(False)
+):
+    _purge_expired_shares()
+    cipher_bytes = await encrypted_blob.read()
+    _validate_e2ee_blob(cipher_bytes)
+    if not encrypted_meta or len(encrypted_meta) < 24:
+        raise HTTPException(status_code=400, detail="Missing encrypted share metadata")
+
+    hours = max(1, min(720, int(expires_in_hours)))
+    os.makedirs(SHARES_DIR, exist_ok=True)
+    share_id = secrets.token_urlsafe(12)
+    revoke_token = secrets.token_hex(16)
+    dest_path = os.path.join(SHARES_DIR, f"{share_id}.enc")
+    with open(dest_path, "wb") as f:
+        f.write(cipher_bytes)
+
+    now = datetime.now(timezone.utc)
+    expires_at = (now + timedelta(hours=hours)).isoformat()
+    record = {
+        "share_id": share_id,
+        "cipher": "AES-256-GCM",
+        "storage_path": dest_path,
+        "encrypted_meta": encrypted_meta,
+        "cipher_size_bytes": len(cipher_bytes),
+        "created_at": now.isoformat(),
+        "expires_at": expires_at,
+        "burn_after_download": bool(burn_after_download),
+        "download_count": 0,
+        "revoke_token": revoke_token
+    }
+    insert_share(record)
+    return {
+        "share_id": share_id,
+        "cipher": "AES-256-GCM",
+        "expires_at": expires_at,
+        "burn_after_download": bool(burn_after_download),
+        "revoke_token": revoke_token
+    }
+
+
+@app.get("/api/shares/{share_id}/meta")
+def get_encrypted_share_meta(share_id: str):
+    _purge_expired_shares()
+    rec = get_share_by_id(share_id)
+    if not rec or not os.path.exists(rec.get("storage_path", "")):
+        raise HTTPException(status_code=404, detail="Encrypted share link has expired or already been burned.")
+    return {
+        "share_id": rec["share_id"],
+        "cipher": rec.get("cipher", "AES-256-GCM"),
+        "encrypted_meta": rec["encrypted_meta"],
+        "cipher_size_bytes": rec.get("cipher_size_bytes", 0),
+        "created_at": rec.get("created_at"),
+        "expires_at": rec.get("expires_at"),
+        "burn_after_download": rec.get("burn_after_download", False),
+        "download_count": rec.get("download_count", 0)
+    }
+
+
+@app.get("/api/shares/{share_id}/blob")
+def download_encrypted_share_blob(share_id: str):
+    _purge_expired_shares()
+    rec = get_share_by_id(share_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Encrypted share link has expired or already been burned.")
+    storage_path = rec.get("storage_path", "")
+    if not os.path.exists(storage_path):
+        delete_share_record(share_id)
+        raise HTTPException(status_code=404, detail="Encrypted share payload missing or burned.")
+
+    with open(storage_path, "rb") as f:
+        cipher_bytes = f.read()
+
+    if rec.get("burn_after_download", False):
+        try:
+            os.remove(storage_path)
+        except Exception:
+            pass
+        delete_share_record(share_id)
+        if os.path.exists(SHARES_DIR) and not os.listdir(SHARES_DIR):
+            try:
+                os.rmdir(SHARES_DIR)
+            except Exception:
+                pass
+    else:
+        update_share(share_id, {"download_count": int(rec.get("download_count", 0)) + 1})
+
+    return Response(content=cipher_bytes, media_type="application/octet-stream")
+
+
+@app.delete("/api/shares/{share_id}")
+def revoke_encrypted_share(share_id: str, x_revoke_token: Optional[str] = Header(None)):
+    rec = get_share_by_id(share_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Share not found")
+    if not x_revoke_token or x_revoke_token != rec.get("revoke_token"):
+        raise HTTPException(status_code=403, detail="Invalid revoke token")
+    sp = rec.get("storage_path")
+    if sp and os.path.exists(sp):
+        try:
+            os.remove(sp)
+        except Exception:
+            pass
+    delete_share_record(share_id)
+    if os.path.exists(SHARES_DIR) and not os.listdir(SHARES_DIR):
+        try:
+            os.rmdir(SHARES_DIR)
+        except Exception:
+            pass
+    return {"message": "Encrypted share link permanently revoked", "share_id": share_id}
+
 
 # Static files mounting
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

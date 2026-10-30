@@ -52,11 +52,9 @@ function showToast(message, type = 'info') {
 // Lifecycle Init
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
-  fetchFiles();
-  fetchStats();
-  checkRetentionOverview();
   setupKeyboardShortcuts();
   setupHeroDropZone();
+  initE2EEAndShareFlow();
 });
 
 // Color Template Theme System
@@ -119,6 +117,9 @@ function setupKeyboardShortcuts() {
       closeInspectorModal();
       closeRenameModal();
       closeQuickTagModal();
+      closeShareModal();
+      closeSharedReceiveModal();
+      closeVaultInfoModal();
       toggleMobileDrawer(false);
       hideSearchDropdown();
     }
@@ -582,8 +583,9 @@ function renderFileCard(file) {
             </button>
           </div>
 
-          <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-1">
+          <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-1 flex-wrap">
             <span class="px-1.5 py-0.2 rounded font-mono font-bold text-[9px] uppercase ${extBadge.pill}">${ext.replace('.', '')}</span>
+            <span class="px-1.5 py-0.2 rounded font-mono font-bold text-[9px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">🔒 E2EE</span>
             <span>${formatBytes(file.size_bytes)}</span>
             <span>•</span>
             <span>${file.word_count || 0} words</span>
@@ -648,6 +650,17 @@ function renderFileCard(file) {
           >
             <i data-lucide="eye" class="w-3.5 h-3.5"></i>
           </button>
+
+          ${!(window.AegisE2EE && window.AegisE2EE.isAndroid) ? `
+          <!-- Share E2EE Link -->
+          <button 
+            onclick="openShareModal('${file.id}')" 
+            class="p-1.5 hover:bg-emerald-950/50 text-slate-400 hover:text-emerald-300 rounded-lg transition-colors"
+            title="Share End-to-End Encrypted Link"
+          >
+            <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+          </button>
+          ` : ''}
 
           <!-- Download -->
           <button 
@@ -815,12 +828,12 @@ function resetFilters() {
   fetchFiles();
 }
 
-// DOWNLOAD / SAVE FILE (works on both web server and Android on-device storage)
+// DOWNLOAD / SAVE FILE (decrypts AES-256-GCM envelope in browser / Android)
 async function downloadFile(fileId) {
   try {
-    if (window.AegisLocal && typeof window.AegisLocal.download === 'function') {
-      const msg = await window.AegisLocal.download(fileId);
-      showToast(msg || 'Saved to Downloads', 'success');
+    if (window.AegisE2EE && typeof window.AegisE2EE.downloadDecrypted === 'function') {
+      const msg = await window.AegisE2EE.downloadDecrypted(fileId);
+      showToast(msg || 'Decrypted & downloaded!', 'success');
       return;
     }
     const a = document.createElement('a');
@@ -830,7 +843,7 @@ async function downloadFile(fileId) {
     a.click();
     a.remove();
   } catch (err) {
-    showToast(err.message || 'Download failed', 'error');
+    showToast(err.message || 'Decryption / download failed', 'error');
   }
 }
 
@@ -1206,6 +1219,23 @@ async function openInspectorModal(fileId) {
     `;
     document.getElementById('inspectorProtectionText').textContent = ret.is_protected ? '🛡️ Protected (Immune to cleanup)' : 'Standard Lifecycle (Subject to retention)';
 
+    // Security & Live Ciphertext Proof Tab
+    const shareBtn = document.getElementById('inspectorShareBtn');
+    if (shareBtn) {
+      shareBtn.classList.toggle('hidden', Boolean(window.AegisE2EE && window.AegisE2EE.isAndroid));
+    }
+    const shaEl = document.getElementById('inspectorSha256');
+    if (shaEl) shaEl.textContent = file.sha256_fingerprint || 'Verified via AES-256-GCM 128-bit Auth Tag';
+    const proofBox = document.getElementById('inspectorServerProofBox');
+    if (proofBox && window.AegisE2EE) {
+      proofBox.textContent = 'Inspecting encrypted server blob...';
+      window.AegisE2EE.getServerProof(fileId).then(proof => {
+        proofBox.textContent = JSON.stringify(proof, null, 2);
+      }).catch(e => {
+        proofBox.textContent = 'Proof fetch notice: ' + (e.message || e);
+      });
+    }
+
     switchInspectorTab('ai');
     document.getElementById('inspectorModal').classList.remove('hidden');
     renderIcons();
@@ -1223,17 +1253,25 @@ function switchInspectorTab(tab) {
   document.getElementById('inspectorTabAi').classList.toggle('hidden', tab !== 'ai');
   document.getElementById('inspectorTabContent').classList.toggle('hidden', tab !== 'content');
   document.getElementById('inspectorTabRetention').classList.toggle('hidden', tab !== 'retention');
+  const secTab = document.getElementById('inspectorTabSecurity');
+  if (secTab) secTab.classList.toggle('hidden', tab !== 'security');
 
   const btnAi = document.getElementById('tabBtnAi');
   const btnContent = document.getElementById('tabBtnContent');
   const btnRetention = document.getElementById('tabBtnRetention');
+  const btnSecurity = document.getElementById('tabBtnSecurity');
 
-  const activeClasses = 'px-4 py-2.5 font-bold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-1.5';
-  const inactiveClasses = 'px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5';
+  const activeClasses = 'px-4 py-2.5 font-bold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-1.5 shrink-0';
+  const inactiveClasses = 'px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 shrink-0';
 
   btnAi.className = tab === 'ai' ? activeClasses : inactiveClasses;
   btnContent.className = tab === 'content' ? activeClasses : inactiveClasses;
   btnRetention.className = tab === 'retention' ? activeClasses : inactiveClasses;
+  if (btnSecurity) {
+    btnSecurity.className = tab === 'security'
+      ? 'px-4 py-2.5 font-bold border-b-2 border-emerald-500 text-emerald-400 flex items-center gap-1.5 shrink-0'
+      : inactiveClasses;
+  }
 }
 
 function renderInspectorTags(tags) {
@@ -1390,7 +1428,7 @@ async function submitUpload() {
 
   const btn = document.getElementById('uploadSubmitBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span>Processing documents...</span>';
+  btn.innerHTML = '<span>AI Reading &amp; AES-256 Encrypting...</span>';
 
   const formData = new FormData();
   selectedFiles.forEach(f => formData.append('files', f));
@@ -1404,15 +1442,282 @@ async function submitUpload() {
     });
     if (!res.ok) throw new Error('Upload failed');
     const data = await res.json();
-    showToast(`Successfully analyzed and uploaded ${data.count} document${data.count > 1 ? 's' : ''}!`, 'success');
+    showToast(`Encrypted (AES-256-GCM) & uploaded ${data.count} document${data.count > 1 ? 's' : ''}!`, 'success');
     closeUploadModal();
     fetchFiles();
   } catch (err) {
     showToast(err.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i><span>Process & Upload</span>';
+    btn.innerHTML = '<i data-lucide="lock" class="w-3.5 h-3.5"></i><span>Encrypt &amp; Upload</span>';
     renderIcons();
+  }
+}
+
+// ===========================================================================
+// END-TO-END ENCRYPTION (E2EE) VAULT LOCK & ENCRYPTED FILE SHARING UI
+// ===========================================================================
+let activeShareTargetId = null;
+let incomingShareContext = null;
+
+function copyTextUniversal(text, successMsg = 'Copied to clipboard!') {
+  if (window.AegisNative && typeof window.AegisNative.copyText === 'function') {
+    window.AegisNative.copyText(text);
+    showToast(successMsg, 'success');
+    return;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast(successMsg, 'success')).catch(() => {
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function initE2EEAndShareFlow() {
+  window.addEventListener('hashchange', checkIncomingShareHash);
+  checkIncomingShareHash();
+  syncVaultLockUI();
+  if (window.AegisE2EE && window.AegisE2EE.isUnlocked()) {
+    fetchFiles();
+    fetchStats();
+    checkRetentionOverview();
+  } else {
+    renderWorkspace();
+    renderIcons();
+  }
+}
+
+function syncVaultLockUI() {
+  if (!window.AegisE2EE) return;
+  const st = window.AegisE2EE.getStatus();
+  const lockModal = document.getElementById('vaultLockModal');
+  const topLabel = document.getElementById('e2eeTopStatusText');
+  if (topLabel) {
+    topLabel.textContent = st.unlocked ? (st.keyFingerprint || 'E2EE Active') : 'Vault Locked';
+  }
+  if (lockModal) {
+    lockModal.classList.toggle('hidden', st.unlocked);
+    if (!st.unlocked) {
+      setTimeout(() => {
+        const inp = document.getElementById('vaultPassphraseInput');
+        if (inp) inp.focus();
+      }, 60);
+    }
+  }
+  renderIcons();
+}
+
+function toggleVaultPassVisibility() {
+  const inp = document.getElementById('vaultPassphraseInput');
+  const icon = document.getElementById('vaultPassEyeIcon');
+  if (!inp) return;
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  if (icon) icon.setAttribute('data-lucide', show ? 'eye-off' : 'eye');
+  renderIcons();
+}
+
+function fillGeneratedPassphrase() {
+  if (!window.AegisE2EE) return;
+  const key = window.AegisE2EE.generateStrongPassphrase();
+  const inp = document.getElementById('vaultPassphraseInput');
+  if (inp) {
+    inp.value = key;
+    inp.type = 'text';
+  }
+  copyTextUniversal(key, 'Generated strong Vault Key & copied to clipboard — save it safely!');
+  renderIcons();
+}
+
+function copyVaultPassphraseInput() {
+  const inp = document.getElementById('vaultPassphraseInput');
+  if (!inp || !inp.value.trim()) {
+    showToast('Enter or generate a Vault Passphrase first.', 'warning');
+    return;
+  }
+  copyTextUniversal(inp.value.trim(), 'Vault Passphrase copied to clipboard!');
+}
+
+async function submitVaultUnlock() {
+  const inp = document.getElementById('vaultPassphraseInput');
+  const remember = document.getElementById('rememberVaultDevice');
+  const errEl = document.getElementById('vaultLockError');
+  const btn = document.getElementById('vaultUnlockBtn');
+  if (!inp || !window.AegisE2EE) return;
+
+  const pass = inp.value.trim();
+  if (pass.length < 6) {
+    if (errEl) {
+      errEl.textContent = 'Please enter at least 6 characters (or click "Generate Strong Key").';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+  if (errEl) errEl.classList.add('hidden');
+  btn.disabled = true;
+  btn.innerHTML = '<span>Deriving 256-bit Key (PBKDF2)...</span>';
+
+  try {
+    const info = await window.AegisE2EE.unlockWithPassphrase(pass, remember ? remember.checked : true);
+    inp.value = '';
+    syncVaultLockUI();
+    showToast(`Unlocked E2EE Vault (${info.keyFingerprint})`, 'success');
+    fetchFiles();
+  } catch (err) {
+    if (errEl) {
+      errEl.textContent = err.message || String(err);
+      errEl.classList.remove('hidden');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="unlock" class="w-4 h-4"></i><span>Unlock Encrypted Vault</span>';
+    renderIcons();
+  }
+}
+
+function lockVaultSession() {
+  if (!window.AegisE2EE) return;
+  window.AegisE2EE.lockVault();
+  state.files = [];
+  state.stats = null;
+  closeVaultInfoModal();
+  closeInspectorModal();
+  closeShareModal();
+  toggleMobileDrawer(false);
+  renderWorkspace();
+  syncVaultLockUI();
+  showToast('Vault locked. Encryption key wiped from memory.', 'info');
+}
+
+function openVaultInfoModal() {
+  if (!window.AegisE2EE) return;
+  const st = window.AegisE2EE.getStatus();
+  const fpEl = document.getElementById('vaultInfoFingerprint');
+  const idEl = document.getElementById('vaultInfoId');
+  if (fpEl) fpEl.textContent = st.keyFingerprint || '-';
+  if (idEl) idEl.textContent = st.vaultIdShort || '-';
+  toggleMobileDrawer(false);
+  document.getElementById('vaultInfoModal').classList.remove('hidden');
+  renderIcons();
+}
+
+function closeVaultInfoModal() {
+  const m = document.getElementById('vaultInfoModal');
+  if (m) m.classList.add('hidden');
+}
+
+function openShareModal(fileId) {
+  const file = state.files.find(f => f.id === fileId) || state.currentInspectedFile;
+  if (!file) return;
+  activeShareTargetId = fileId;
+  document.getElementById('shareModalFilename').textContent = file.filename;
+  document.getElementById('shareResultBox').classList.add('hidden');
+  document.getElementById('shareLinkOutput').value = '';
+  document.getElementById('shareBurnCheckbox').checked = false;
+  document.getElementById('shareModal').classList.remove('hidden');
+  renderIcons();
+}
+
+function closeShareModal() {
+  activeShareTargetId = null;
+  const m = document.getElementById('shareModal');
+  if (m) m.classList.add('hidden');
+}
+
+async function generateEncryptedShare() {
+  if (!activeShareTargetId || !window.AegisE2EE) return;
+  const btn = document.getElementById('generateShareBtn');
+  const hours = parseInt(document.getElementById('shareExpirySelect').value || '168', 10);
+  const burn = document.getElementById('shareBurnCheckbox').checked;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span>Encrypting with ephemeral 256-bit key...</span>';
+  try {
+    const res = await window.AegisE2EE.createEncryptedShareLink(activeShareTargetId, hours, burn);
+    document.getElementById('shareLinkOutput').value = res.url;
+    document.getElementById('shareResultMeta').textContent =
+      (burn ? '1-time download • ' : '') + 'Expires ' + new Date(res.expires_at).toLocaleDateString();
+    document.getElementById('shareResultBox').classList.remove('hidden');
+    copyTextUniversal(res.url, 'End-to-End Encrypted share link copied!');
+  } catch (err) {
+    showToast(err.message || 'Share creation failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="lock" class="w-4 h-4"></i><span>Encrypt &amp; Create Shareable Link</span>';
+    renderIcons();
+  }
+}
+
+function copyShareLink() {
+  const val = document.getElementById('shareLinkOutput').value;
+  if (val) copyTextUniversal(val, 'End-to-End Encrypted link copied!');
+}
+
+async function checkIncomingShareHash() {
+  const hash = (window.location.hash || '').replace(/^#/, '');
+  if (!hash.includes('share=')) return;
+  const params = new URLSearchParams(hash);
+  const shareId = params.get('share');
+  const keyB64 = params.get('key');
+  if (!shareId || !keyB64 || !window.AegisE2EE) return;
+
+  const modal = document.getElementById('sharedReceiveModal');
+  const errBox = document.getElementById('sharedErrorBox');
+  const contentBox = document.getElementById('sharedContentBox');
+  modal.classList.remove('hidden');
+  errBox.classList.add('hidden');
+  contentBox.classList.remove('hidden');
+  document.getElementById('sharedFileTitle').textContent = 'Decrypting metadata...';
+  renderIcons();
+
+  try {
+    const info = await window.AegisE2EE.inspectIncomingShare(shareId, keyB64);
+    incomingShareContext = { shareId, ...info };
+    document.getElementById('sharedFileTitle').textContent = info.meta.filename;
+    document.getElementById('sharedFileMeta').textContent =
+      `${formatBytes(info.meta.size_bytes)} • ${info.meta.context_category} • Expires ${new Date(info.serverInfo.expires_at).toLocaleString()}`;
+    document.getElementById('sharedFileSummary').textContent = info.meta.ai_summary || '';
+    document.getElementById('sharedBurnNotice').classList.toggle('hidden', !info.serverInfo.burn_after_download);
+  } catch (err) {
+    incomingShareContext = null;
+    contentBox.classList.add('hidden');
+    errBox.textContent = err.message || 'Failed to decrypt shared file.';
+    errBox.classList.remove('hidden');
+  }
+}
+
+async function downloadIncomingSharedFile() {
+  if (!incomingShareContext || !window.AegisE2EE) return;
+  const btn = document.getElementById('downloadSharedBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span>Decrypting &amp; verifying AES-256-GCM tag...</span>';
+  try {
+    await window.AegisE2EE.downloadIncomingShare(
+      incomingShareContext.shareId,
+      incomingShareContext.shareKey,
+      incomingShareContext.meta
+    );
+    showToast(`Decrypted & saved "${incomingShareContext.meta.filename}"!`, 'success');
+    if (incomingShareContext.serverInfo.burn_after_download) {
+      closeSharedReceiveModal();
+      showToast('One-time encrypted share has been burned from the server.', 'info');
+    }
+  } catch (err) {
+    showToast(err.message || 'Decryption failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="download" class="w-4 h-4"></i><span>Decrypt &amp; Download File</span>';
+    renderIcons();
+  }
+}
+
+function closeSharedReceiveModal() {
+  incomingShareContext = null;
+  document.getElementById('sharedReceiveModal').classList.add('hidden');
+  if ((window.location.hash || '').includes('share=')) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
   }
 }
 

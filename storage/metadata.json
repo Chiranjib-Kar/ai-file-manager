@@ -2,5 +2,6 @@
   "files": [],
   "settings": {
     "retention_days": 30
-  }
+  },
+  "shares": []
 }

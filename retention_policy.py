@@ -14,7 +14,7 @@ def calculate_file_retention_status(file_record: Dict[str, Any], retention_days:
         retention_days = int(settings.get("retention_days", 30))
 
     tags = [t.lower() for t in file_record.get("tags", [])]
-    is_important = "important" in tags or file_record.get("is_pinned", False)
+    is_important = "important" in tags or file_record.get("is_pinned", False) or file_record.get("is_protected", False)
 
     # 1. Important files are strictly protected
     if is_important:
@@ -150,7 +150,7 @@ def handle_retention_action(file_ids: List[str], action: str, custom_extension_d
             continue
 
         tags = [t.lower() for t in target.get("tags", [])]
-        is_important = "important" in tags
+        is_important = "important" in tags or target.get("is_protected", False)
 
         if action == "delete":
             # Safety check: Never delete important files via retention cleanup!

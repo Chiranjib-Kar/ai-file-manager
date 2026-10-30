@@ -28,8 +28,9 @@ def sync_web_assets():
     for fname in os.listdir(VENDOR_SRC):
         shutil.copy2(os.path.join(VENDOR_SRC, fname), os.path.join(ASSETS_DIR, "vendor", fname))
 
-    # 2. Copy local-api.js and shared app.js
+    # 2. Copy local-api.js, e2ee.js, and shared app.js
     shutil.copy2(LOCAL_API, os.path.join(ASSETS_DIR, "local-api.js"))
+    shutil.copy2(os.path.join(STATIC_DIR, "e2ee.js"), os.path.join(ASSETS_DIR, "e2ee.js"))
     shutil.copy2(os.path.join(STATIC_DIR, "app.js"), os.path.join(ASSETS_DIR, "app.js"))
 
     # 3. Copy styles.css without remote @import so offline startup is instant
@@ -44,10 +45,14 @@ def sync_web_assets():
     html = html.replace('https://unpkg.com/lucide@latest', 'vendor/lucide.min.js')
     html = html.replace('/static/styles.css', 'styles.css')
     html = html.replace(
-        '<script src="/static/app.js"></script>',
+        '<script src="/static/vendor/pdf.min.js"></script>\n'
+        '  <script src="/static/vendor/jszip.min.js"></script>\n'
+        '  <script src="/static/e2ee.js"></script>\n'
+        '  <script src="/static/app.js"></script>',
         '<script src="vendor/pdf.min.js"></script>\n'
         '  <script src="vendor/jszip.min.js"></script>\n'
         '  <script src="local-api.js"></script>\n'
+        '  <script src="e2ee.js"></script>\n'
         '  <script src="app.js"></script>'
     )
     with open(os.path.join(ASSETS_DIR, "index.html"), "w", encoding="utf-8") as f:

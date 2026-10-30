@@ -40,6 +40,12 @@ A modern, intelligent AI-powered file manager available both as a **Web Applicat
 - Quick & custom tags (`important`, `temporary`, `study`, `work`, `finance`, `draft`, `receipt`, or any custom tag).
 - 4 built-in themes: **🌿 Emerald Mint** (default), **🔮 Royal Amethyst**, **⚡ Cyber Titanium**, and **☀️ Nordic Light**.
 
+### 6. 🔒 Zero-Knowledge End-to-End Encryption (E2EE) & Encrypted Sharing
+- **AES-256-GCM Vault Encryption**: Your Vault Passphrase derives a 256-bit key locally in your browser (`PBKDF2-HMAC-SHA256`, 210,000 iterations) that **never leaves your device**.
+- **Client-Side AI Before Encryption**: Documents (`PDF`, `.docx`, `TXT`, `MD`, `CSV`, code) are read and classified by AI inside your browser first; both the raw file (`AE2E\x01` binary envelope) and all metadata (filenames, extracted text, AI summary, tags) are encrypted before upload.
+- **Zero-Knowledge Share Links (`#share=<id>&key=<secret>`)**: Share individual files using ephemeral 256-bit AES-GCM keys placed strictly after `#` in the URL (never sent to the server), with configurable expiry (24h / 7d / 30d) and optional **Burn after 1st download**.
+- **Live Server Ciphertext Proof**: Open any file's **E2EE Security Proof** tab in the Document Inspector to verify live hexadecimal ciphertext stored on disk.
+
 ---
 
 ## 📱 Android Phone App (`Aegis-AI-File-Manager.apk`)

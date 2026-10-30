@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="emerald">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aegis - AI File Manager</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="vendor/tailwind.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              900: '#1e1b4b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons CDN -->
+  <script src="vendor/lucide.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased text-slate-100 selection:bg-indigo-500 selection:text-white">
+
+  <!-- TOP APP BAR -->
+  <header class="sticky top-0 z-40 glass-header px-4 lg:px-8 py-3 shadow-xl">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+        <div class="flex items-center gap-3 cursor-pointer select-none" onclick="resetFilters()">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/25 text-white font-black text-xl">
+            <i data-lucide="sparkles" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-300 bg-clip-text text-transparent">Aegis AI Vault</span>
+              <span class="px-2 py-0.5 text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 rounded-full">Intelligent</span>
+            </div>
+            <p class="text-xs text-slate-400 hidden sm:block">Context Segregation • AI Renamer • Retention Guardian</p>
+          </div>
+        </div>
+
+        <!-- Mobile actions: filters/settings drawer + upload -->
+        <div class="md:hidden flex items-center gap-2">
+          <button onclick="toggleMobileDrawer()" class="p-2.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700" title="Filters & settings">
+            <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+          </button>
+          <button onclick="openUploadModal()" class="p-2.5 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30" title="Upload files">
+            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- SEARCH TASKBAR -->
+      <div class="w-full md:flex-1 max-w-2xl relative">
+        <div class="relative flex items-center">
+          <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+            <i data-lucide="search" class="w-4 h-4"></i>
+          </div>
+          <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="Search filenames, document contents, tags (e.g. tag:important, study)... (Ctrl+K)" 
+            class="w-full pl-10 pr-24 py-2.5 bg-slate-900/80 border border-slate-700/80 rounded-xl text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/25 shadow-inner transition-all"
+            oninput="handleSearchInput(event)"
+            onkeydown="handleSearchKeyDown(event)"
+          />
+          <div class="absolute inset-y-0 right-0 pr-2.5 flex items-center gap-1.5">
+            <button id="clearSearchBtn" onclick="clearSearch()" class="hidden p-1 text-slate-400 hover:text-slate-200 rounded">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+            <span class="hidden sm:inline-flex items-center text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Ctrl K</span>
+          </div>
+        </div>
+
+        <!-- Live Search Autocomplete / Quick Results Dropdown -->
+        <div id="searchDropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 divide-y divide-slate-800/80">
+          <div id="searchDropdownItems" class="max-h-80 overflow-y-auto"></div>
+          <div class="p-2.5 bg-slate-950/70 flex items-center justify-between text-xs text-slate-400">
+            <span>Press <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300">Enter</kbd> to search vault</span>
+            <span id="searchResultCountText" class="font-mono text-indigo-400">0 matches</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TOP ACTIONS -->
+      <div class="hidden md:flex items-center gap-2.5">
+        <!-- Color Theme Selector -->
+        <div class="flex items-center gap-1.5 bg-slate-900/80 border border-slate-700/80 px-3 py-1.5 rounded-xl text-xs" title="Switch Color Theme">
+          <i data-lucide="palette" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span class="text-slate-400">Theme:</span>
+          <select id="themeSelect" onchange="changeTheme(this.value)" class="bg-transparent font-medium text-slate-200 focus:outline-none cursor-pointer">
+            <option value="emerald" class="bg-slate-900 text-slate-100">🌿 Emerald Mint</option>
+            <option value="amethyst" class="bg-slate-900 text-slate-100">👑 Royal Amethyst</option>
+            <option value="cyber" class="bg-slate-900 text-slate-100">🌌 Cyber Titanium</option>
+            <option value="light" class="bg-slate-900 text-slate-100">💎 Nordic Light</option>
+          </select>
+        </div>
+
+        <!-- Retention policy selector -->
+        <div class="flex items-center gap-1.5 bg-slate-900/80 border border-slate-700/80 px-3 py-1.5 rounded-xl text-xs" title="Auto-expiry review threshold">
+          <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span class="text-slate-400">Retention:</span>
+          <select id="retentionSelect" onchange="changeRetentionPolicy(this.value)" class="bg-transparent font-medium text-slate-200 focus:outline-none cursor-pointer">
+            <option value="30" class="bg-slate-900 text-slate-100">1 Month (30d)</option>
+            <option value="60" class="bg-slate-900 text-slate-100">2 Months (60d)</option>
+            <option value="90" class="bg-slate-900 text-slate-100">3 Months (90d)</option>
+          </select>
+        </div>
+
+        <!-- Primary Upload Button -->
+        <button 
+          onclick="openUploadModal()" 
+          class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-xs font-semibold rounded-xl shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+          <span>Upload Files</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- RETENTION EXPIRY PERMISSION BANNER -->
+  <div id="retentionAlertBanner" class="hidden bg-gradient-to-r from-rose-950/90 via-amber-950/80 to-slate-900 border-b border-rose-500/30 px-4 py-2.5 text-xs text-rose-200 shadow-md">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <span class="flex h-2.5 w-2.5 relative">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+        </span>
+        <span class="font-medium text-slate-100" id="retentionAlertText">
+          ⚠️ Files have exceeded your retention period and require your permission before deletion.
+        </span>
+        <span class="hidden md:inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <i data-lucide="shield-check" class="w-3 h-3"></i>
+          Files tagged 'important' are safely excluded
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="openRetentionModal()" class="px-3.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-lg shadow transition-colors flex items-center gap-1.5">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span>Review & Clean Up</span>
+        </button>
+        <button onclick="dismissRetentionBanner()" class="p-1 hover:text-white text-rose-300">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN APP CONTAINER -->
+  <div class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 flex flex-col md:flex-row gap-6">
+
+    <!-- Mobile drawer backdrop -->
+    <div id="drawerBackdrop" class="hidden fixed inset-0 z-40 bg-black/60 md:hidden" onclick="toggleMobileDrawer(false)"></div>
+
+    <!-- LEFT SIDEBAR (slide-in drawer on phones) -->
+    <aside id="sidebar" class="sidebar-drawer w-full md:w-64 shrink-0 flex-col gap-5">
+
+      <!-- Mobile-only: drawer header + settings that are in the top bar on desktop -->
+      <div class="md:hidden flex items-center justify-between">
+        <span class="text-sm font-bold text-slate-100">Filters & Settings</span>
+        <button onclick="toggleMobileDrawer(false)" class="p-1.5 text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="md:hidden glass-card rounded-2xl p-4 space-y-3 text-xs">
+        <label class="flex items-center justify-between gap-2">
+          <span class="flex items-center gap-1.5 text-slate-400"><i data-lucide="palette" class="w-3.5 h-3.5 text-emerald-400"></i>Theme</span>
+          <select id="themeSelectMobile" onchange="changeTheme(this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200">
+            <option value="emerald">🌿 Emerald Mint</option>
+            <option value="amethyst">👑 Royal Amethyst</option>
+            <option value="cyber">🌌 Cyber Titanium</option>
+            <option value="light">💎 Nordic Light</option>
+          </select>
+        </label>
+        <label class="flex items-center justify-between gap-2">
+          <span class="flex items-center gap-1.5 text-slate-400"><i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400"></i>Delete review after</span>
+          <select id="retentionSelectMobile" onchange="changeRetentionPolicy(this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200">
+            <option value="30">1 Month (30d)</option>
+            <option value="60">2 Months (60d)</option>
+            <option value="90">3 Months (90d)</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- Vault Quick Overview Card -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="hard-drive" class="w-3.5 h-3.5 text-indigo-400"></i>
+            Vault Status
+          </span>
+          <span id="statTotalFiles" class="text-xs font-bold px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded-full font-mono">0 files</span>
+        </div>
+        <div class="space-y-2">
+          <div class="flex justify-between text-xs text-slate-300">
+            <span>Storage Used</span>
+            <span id="statTotalSize" class="font-mono text-indigo-300 font-semibold">0 KB</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div id="storageBar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-1.5 rounded-full" style="width: 15%"></div>
+          </div>
+          <div class="flex justify-between items-center text-[11px] pt-1 text-slate-400">
+            <span class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span id="statProtectedCount" class="font-bold text-emerald-400">0</span> Protected
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+              <span id="statExpiredCount" class="font-bold text-rose-400">0</span> Overdue
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTEXT SEGREGATION (Core Feature 1) -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-2.5">
+          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-400"></i>
+            Context Segregation
+          </span>
+        </div>
+        <nav class="space-y-1 text-xs" id="contextNav">
+          <!-- Injected dynamically -->
+        </nav>
+      </div>
+
+      <!-- FILE TYPES FILTER -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-2.5">
+          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="folder" class="w-3.5 h-3.5 text-cyan-400"></i>
+            File Types
+          </span>
+        </div>
+        <nav class="space-y-1 text-xs" id="fileTypeNav">
+          <!-- Injected dynamically -->
+        </nav>
+      </div>
+
+      <!-- RETENTION STATUS FILTER -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-2.5">
+          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="shield" class="w-3.5 h-3.5 text-amber-400"></i>
+            Retention Status
+          </span>
+        </div>
+        <nav class="space-y-1 text-xs" id="retentionNav">
+          <button onclick="setRetentionFilter('All')" class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800/80 transition-colors ret-filter-btn" data-filter="All">
+            <span class="flex items-center gap-2"><i data-lucide="list" class="w-3.5 h-3.5 text-slate-400"></i> All Lifecycles</span>
+            <span class="text-[11px] text-slate-500 font-mono" id="countRetAll">-</span>
+          </button>
+          <button onclick="setRetentionFilter('expired')" class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-rose-300 hover:bg-rose-950/30 transition-colors ret-filter-btn" data-filter="expired">
+            <span class="flex items-center gap-2"><i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-rose-400"></i> Expired (Needs Review)</span>
+            <span class="text-[11px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono" id="countRetExpired">0</span>
+          </button>
+          <button onclick="setRetentionFilter('protected')" class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-emerald-300 hover:bg-emerald-950/30 transition-colors ret-filter-btn" data-filter="protected">
+            <span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i> Protected (Important)</span>
+            <span class="text-[11px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono" id="countRetProtected">0</span>
+          </button>
+          <button onclick="setRetentionFilter('expiring_soon')" class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-amber-300 hover:bg-amber-950/30 transition-colors ret-filter-btn" data-filter="expiring_soon">
+            <span class="flex items-center gap-2"><i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400"></i> Expiring Soon (&lt;7d)</span>
+            <span class="text-[11px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono" id="countRetExpiringSoon">0</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- TAGS MANAGER (Core Feature 5) -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-2.5">
+          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="tag" class="w-3.5 h-3.5 text-indigo-400"></i>
+            Tags Manager
+          </span>
+          <button onclick="promptCreateCustomTag()" class="text-slate-400 hover:text-indigo-400 p-0.5" title="Add New Custom Tag">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+        <div class="flex flex-wrap gap-1.5" id="tagCloud">
+          <!-- Injected dynamically -->
+        </div>
+      </div>
+
+      <!-- ANDROID APP DOWNLOAD CARD (Web only) -->
+      <div id="downloadApkCard" class="glass-card rounded-2xl p-4 space-y-2.5">
+        <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
+          <i data-lucide="smartphone" class="w-4 h-4 text-emerald-400"></i>
+          <span>Android Phone App</span>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Install Aegis AI Vault on your Android phone — works offline with full PDF &amp; Word reading.
+        </p>
+        <a href="/download-app" download="Aegis-AI-File-Manager.apk" class="w-full flex items-center justify-center gap-2 px-3 py-2 btn-primary-gradient text-xs font-semibold rounded-xl transition-all">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Download APK</span>
+        </a>
+      </div>
+
+    </aside>
+
+    <!-- MAIN FILES WORKSPACE -->
+    <main class="flex-1 min-w-0 flex flex-col gap-4">
+
+      <!-- QUICK CONTEXT HORIZONTAL FILTER TABS -->
+      <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+        <button onclick="setContextFilter('All')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-indigo-600 text-white shadow-sm" data-context="All">
+          All Files
+        </button>
+        <button onclick="setContextFilter('Study & Education')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800" data-context="Study & Education">
+          📚 Study
+        </button>
+        <button onclick="setContextFilter('Finance & Invoices')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800" data-context="Finance & Invoices">
+          💳 Finance
+        </button>
+        <button onclick="setContextFilter('Work & Projects')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800" data-context="Work & Projects">
+          💼 Work
+        </button>
+        <button onclick="setContextFilter('Legal & Identity')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800" data-context="Legal & Identity">
+          ⚖️ Legal
+        </button>
+        <button onclick="setContextFilter('Code & Technical')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800" data-context="Code & Technical">
+          💻 Code
+        </button>
+        <button onclick="setTagFilter('important')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30" data-tag="important">
+          🛡️ Important
+        </button>
+      </div>
+
+      <!-- WORKSPACE CONTROLS & BATCH ACTIONS BAR -->
+      <div class="glass-card rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3">
+        
+        <!-- Grouping Modes (Context vs Type vs Flat) -->
+        <div class="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 text-xs">
+          <button 
+            onclick="setGroupingMode('context')" 
+            id="groupContextBtn" 
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all group-mode-btn bg-indigo-600 text-white shadow-sm"
+          >
+            <i data-lucide="grid-2x2" class="w-3.5 h-3.5"></i>
+            <span>Group by Context</span>
+          </button>
+          <button 
+            onclick="setGroupingMode('type')" 
+            id="groupTypeBtn" 
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all group-mode-btn text-slate-400 hover:text-slate-200"
+          >
+            <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i>
+            <span>Group by Type</span>
+          </button>
+          <button 
+            onclick="setGroupingMode('none')" 
+            id="groupNoneBtn" 
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all group-mode-btn text-slate-400 hover:text-slate-200"
+          >
+            <i data-lucide="list" class="w-3.5 h-3.5"></i>
+            <span>All Files</span>
+          </button>
+        </div>
+
+        <!-- Sorting & Batch Action Buttons -->
+        <div class="flex items-center gap-2 flex-wrap text-xs">
+          <!-- Sort Dropdown -->
+          <div class="flex items-center gap-1.5 bg-slate-950/70 border border-slate-800 px-2.5 py-1.5 rounded-xl">
+            <i data-lucide="arrow-down-up" class="w-3.5 h-3.5 text-slate-400"></i>
+            <span class="text-slate-400">Sort:</span>
+            <select id="sortSelect" onchange="handleSortChange(this.value)" class="bg-transparent font-medium text-slate-200 focus:outline-none cursor-pointer">
+              <option value="date-desc" class="bg-slate-900">Newest First</option>
+              <option value="date-asc" class="bg-slate-900">Oldest First</option>
+              <option value="name-asc" class="bg-slate-900">Name (A-Z)</option>
+              <option value="size-desc" class="bg-slate-900">Size (Largest)</option>
+              <option value="retention-desc" class="bg-slate-900">Age / Retention (Oldest)</option>
+            </select>
+          </div>
+
+          <!-- Batch AI Renamer Button -->
+          <button 
+            onclick="batchAiRenameAll()" 
+            title="Auto-rename all files with standardized AI names in 1-click"
+            class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-xl transition-all font-medium"
+          >
+            <i data-lucide="wand-2" class="w-3.5 h-3.5 text-indigo-400"></i>
+            <span>AI Auto-Rename All</span>
+          </button>
+
+          <!-- Refresh Button -->
+          <button onclick="fetchFiles()" class="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition-all" title="Refresh files list">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- ACTIVE FILTER INDICATORS -->
+      <div id="activeFilterBar" class="hidden flex items-center gap-2 flex-wrap text-xs px-1">
+        <span class="text-slate-400">Active filters:</span>
+        <div id="filterPills" class="flex items-center gap-1.5 flex-wrap"></div>
+        <button onclick="resetFilters()" class="text-indigo-400 hover:underline ml-1 text-xs">Clear all</button>
+      </div>
+
+      <!-- INLINE QUICK DROPZONE BAR (Visible when files exist) -->
+      <div 
+        id="inlineDropzone" 
+        class="hidden dropzone-dashed p-3.5 rounded-2xl flex items-center justify-between gap-3 text-xs cursor-pointer hover:border-indigo-500 transition-all bg-slate-900/40"
+        onclick="openUploadModal()"
+      >
+        <div class="flex items-center gap-2.5 text-slate-300">
+          <div class="w-8 h-8 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
+            <i data-lucide="file-plus" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <span class="font-semibold text-slate-200">Drop more files here or click to browse</span>
+            <span class="text-slate-400 block text-[11px]">PDFs, Word DOCX, text notes, spreadsheets, code</span>
+          </div>
+        </div>
+        <button class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-xl font-medium border border-slate-700">
+          Browse Files
+        </button>
+      </div>
+
+      <!-- EMPTY STATE: HERO DRAG & DROP ZONE (When 0 files) -->
+      <div id="emptyState" class="hidden py-12 px-6 flex flex-col items-center justify-center text-center dropzone-dashed rounded-3xl bg-slate-900/30">
+        
+        <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-indigo-600/20 via-indigo-500/10 to-cyan-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-5 shadow-2xl shadow-indigo-500/20">
+          <i data-lucide="cloud-upload" class="w-10 h-10 animate-bounce"></i>
+        </div>
+
+        <h3 class="text-xl font-extrabold text-slate-100 tracking-tight">Your File Vault is Ready</h3>
+        <p class="text-sm text-slate-400 max-w-lg mt-1.5 mb-6 leading-relaxed">
+          Drag and drop your documents here, or click the button below to upload. Aegis automatically reads your documents, categorizes context, proposes clean names, and tracks retention.
+        </p>
+
+        <!-- Large Upload Button -->
+        <button 
+          onclick="openUploadModal()" 
+          class="flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-sm font-bold rounded-2xl shadow-xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 mb-6"
+        >
+          <i data-lucide="file-up" class="w-5 h-5"></i>
+          <span>Choose Files to Upload</span>
+        </button>
+
+        <!-- Supported formats badges -->
+        <div class="flex items-center justify-center gap-2 flex-wrap text-[11px] text-slate-400">
+          <span class="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 font-mono text-rose-300">PDF Reader</span>
+          <span class="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 font-mono text-blue-300">Word DOCX</span>
+          <span class="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 font-mono text-emerald-300">Excel / CSV</span>
+          <span class="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 font-mono text-cyan-300">Code & Data</span>
+          <span class="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 font-mono text-violet-300">Markdown & Text</span>
+        </div>
+
+      </div>
+
+      <!-- LOADING STATE -->
+      <div id="loadingState" class="hidden py-16 flex flex-col items-center justify-center text-slate-400 gap-3">
+        <div class="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        <p class="text-sm">Reading documents & organizing vault...</p>
+      </div>
+
+      <!-- FILES CONTAINER -->
+      <div id="filesContainer" class="space-y-6">
+        <!-- Rendered dynamically -->
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- UPLOAD MODAL -->
+  <div id="uploadModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-lg rounded-2xl border border-slate-700/80 shadow-2xl p-6 relative flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
+            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-100">Upload & Analyze Documents</h3>
+            <p class="text-xs text-slate-400">PDF, DOCX, TXT, MD, CSV, Code, Images</p>
+          </div>
+        </div>
+        <button onclick="closeUploadModal()" class="text-slate-400 hover:text-slate-200 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Drag & Drop Dropzone inside Modal -->
+      <div 
+        id="dropZone" 
+        class="dropzone-dashed p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-slate-900/60"
+        onclick="document.getElementById('fileInput').click()"
+      >
+        <input type="file" id="fileInput" multiple class="hidden" onchange="handleFileSelect(event)">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-3 shadow-inner">
+          <i data-lucide="file-up" class="w-6 h-6"></i>
+        </div>
+        <p class="text-xs font-bold text-slate-200">Click to browse or drop your files here</p>
+        <p class="text-[11px] text-slate-400 mt-1">Multi-file upload supported. Aegis parses full document bodies.</p>
+      </div>
+
+      <!-- Selected files preview list -->
+      <div id="selectedFilesList" class="hidden max-h-36 overflow-y-auto space-y-1.5 text-xs"></div>
+
+      <!-- AI Options on Upload -->
+      <div class="space-y-3 bg-slate-900/90 p-4 rounded-xl border border-slate-800">
+        <label class="flex items-center gap-2.5 cursor-pointer">
+          <input type="checkbox" id="autoRenameOnUpload" checked class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-800 border-slate-700 cursor-pointer">
+          <div>
+            <span class="text-xs font-bold text-slate-200">Auto-rename files with AI on upload</span>
+            <p class="text-[11px] text-slate-400">Generates clean standard names (e.g. Study_Notes_Week4.docx) by reading document content</p>
+          </div>
+        </label>
+
+        <div>
+          <label class="text-[11px] font-medium text-slate-400 block mb-1">Add Initial Tags (Optional, click to add)</label>
+          <input 
+            type="text" 
+            id="initialTagsInput" 
+            placeholder="e.g. study, important, temporary" 
+            class="w-full px-3 py-2 bg-slate-800/90 border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+          >
+          <div class="flex gap-1.5 mt-2 flex-wrap">
+            <button type="button" onclick="appendTagToInput('important')" class="px-2.5 py-1 rounded-md text-[10px] font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25">+ important 🛡️</button>
+            <button type="button" onclick="appendTagToInput('study')" class="px-2.5 py-1 rounded-md text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25">+ study 📚</button>
+            <button type="button" onclick="appendTagToInput('temporary')" class="px-2.5 py-1 rounded-md text-[10px] font-medium bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25">+ temporary ⏱️</button>
+            <button type="button" onclick="appendTagToInput('finance')" class="px-2.5 py-1 rounded-md text-[10px] font-medium bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25">+ finance 💳</button>
+            <button type="button" onclick="appendTagToInput('work')" class="px-2.5 py-1 rounded-md text-[10px] font-medium bg-blue-500/15 text-blue-300 border border-blue-500/30 hover:bg-blue-500/25">+ work 💼</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Actions -->
+      <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+        <button onclick="closeUploadModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-colors">
+          Cancel
+        </button>
+        <button id="uploadSubmitBtn" onclick="submitUpload()" class="px-5 py-2 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-xs font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          <span>Process & Upload</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RETENTION PERMISSION & CLEANUP REVIEW MODAL (Core Feature 4) -->
+  <div id="retentionModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-3xl rounded-2xl border border-rose-500/30 shadow-2xl p-6 relative flex flex-col gap-4 max-h-[90vh]">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+            <i data-lucide="clock-alert" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+              File Retention Cleanup Review
+              <span class="px-2 py-0.5 rounded-full text-[11px] bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono" id="expiredCountPill">0 files</span>
+            </h3>
+            <p class="text-xs text-slate-400">
+              Files older than the retention threshold (<span id="retentionThresholdText">30</span> days) require your permission before deletion.
+            </p>
+          </div>
+        </div>
+        <button onclick="closeRetentionModal()" class="text-slate-400 hover:text-slate-200 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Safety Notice on 'Important' Tag -->
+      <div class="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3 flex items-start gap-3 text-xs text-emerald-200">
+        <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400 shrink-0 mt-0.5"></i>
+        <div>
+          <span class="font-bold text-emerald-300">Immunity Guarantee:</span>
+          <span> Files tagged with <code class="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-200 rounded font-mono font-bold">important</code> are strictly immune to retention deletion and will NEVER appear in this cleanup review.</span>
+        </div>
+      </div>
+
+      <!-- Pending Files Review Table -->
+      <div class="flex-1 overflow-y-auto border border-slate-800 rounded-xl">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="bg-slate-900/90 text-slate-400 border-b border-slate-800 sticky top-0">
+            <tr>
+              <th class="p-3 w-8">
+                <input type="checkbox" id="selectAllExpired" onchange="toggleSelectAllExpired(this.checked)" class="w-4 h-4 rounded text-rose-600 bg-slate-800 border-slate-700 cursor-pointer">
+              </th>
+              <th class="p-3">File / Document</th>
+              <th class="p-3">Context</th>
+              <th class="p-3">Age</th>
+              <th class="p-3">Tags</th>
+              <th class="p-3 text-right">Quick Protect</th>
+            </tr>
+          </thead>
+          <tbody id="expiredFilesTableBody" class="divide-y divide-slate-800/80">
+            <!-- Injected dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Permission Action Toolbar -->
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800 text-xs">
+        <div class="text-slate-400">
+          <span id="selectedExpiredCount" class="font-bold text-white">0</span> of <span id="totalExpiredCount">0</span> files selected
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <!-- Mark as Important (Protects Permanently) -->
+          <button 
+            onclick="handleRetentionBatchAction('protect')" 
+            class="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl transition-colors font-medium flex items-center gap-1.5"
+            title="Add 'important' tag to protect selected files permanently"
+          >
+            <i data-lucide="shield-plus" class="w-3.5 h-3.5"></i>
+            <span>Mark Important (Protect)</span>
+          </button>
+
+          <!-- Extend Retention by 30 days -->
+          <button 
+            onclick="handleRetentionBatchAction('extend')" 
+            class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-colors font-medium flex items-center gap-1.5"
+            title="Extend retention for another 30 days"
+          >
+            <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+            <span>Extend (+30 Days)</span>
+          </button>
+
+          <!-- Approve Deletion (Confirms Permanent Delete) -->
+          <button 
+            onclick="handleRetentionBatchAction('delete')" 
+            class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-colors font-semibold shadow-lg shadow-rose-600/30 flex items-center gap-1.5"
+            title="Permanently remove selected stale files"
+          >
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span>Approve & Delete</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- AI DOCUMENT INSPECTOR & PREVIEW MODAL -->
+  <div id="inspectorModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-4xl rounded-2xl border border-slate-700/80 shadow-2xl p-6 relative flex flex-col gap-4 max-h-[90vh]">
+      
+      <!-- Inspector Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div id="inspectorTypeIcon" class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <i data-lucide="file-text" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 id="inspectorFilename" class="text-base font-bold text-slate-100 font-mono">Document.pdf</h3>
+              <span id="inspectorCategoryBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/20 text-indigo-300">Category</span>
+            </div>
+            <p id="inspectorMetaText" class="text-xs text-slate-400">Size: 45 KB • 1,200 words • 6 mins read</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="inspectorDownloadLink" onclick="state.currentInspectedFile && downloadFile(state.currentInspectedFile.id)" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300" title="Download File">
+            <i data-lucide="download" class="w-4 h-4"></i>
+          </button>
+          <button onclick="closeInspectorModal()" class="text-slate-400 hover:text-slate-200 p-1">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Inspector Tabs -->
+      <div class="flex border-b border-slate-800 text-xs">
+        <button onclick="switchInspectorTab('ai')" id="tabBtnAi" class="px-4 py-2.5 font-medium border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-1.5">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+          <span>AI Content Analysis</span>
+        </button>
+        <button onclick="switchInspectorTab('content')" id="tabBtnContent" class="px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5">
+          <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+          <span>Extracted Document Text</span>
+        </button>
+        <button onclick="switchInspectorTab('retention')" id="tabBtnRetention" class="px-4 py-2.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5">
+          <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+          <span>Retention & Lifecycle</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: AI Content Analysis -->
+      <div id="inspectorTabAi" class="flex-1 overflow-y-auto space-y-4 text-xs">
+        <!-- AI Summary -->
+        <div class="bg-indigo-950/30 border border-indigo-500/25 rounded-xl p-4">
+          <div class="flex items-center gap-2 text-indigo-300 font-semibold mb-1.5">
+            <i data-lucide="bot" class="w-4 h-4"></i>
+            <span>AI Executive Summary</span>
+          </div>
+          <p id="inspectorSummary" class="text-slate-300 leading-relaxed text-sm">
+            Summary will appear here...
+          </p>
+        </div>
+
+        <!-- AI Renaming Suggestion Box -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 text-slate-200 font-semibold">
+              <i data-lucide="wand-2" class="w-4 h-4 text-indigo-400"></i>
+              <span>AI Standardized Filename Recommendation</span>
+            </div>
+            <button id="applyAiRenameBtn" onclick="applyInspectorAiName()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors">
+              Apply This Name
+            </button>
+          </div>
+          <div class="p-2.5 bg-slate-950 rounded-lg border border-slate-800 font-mono text-indigo-300 text-xs" id="inspectorAiProposedName">
+            Proposed_Name.ext
+          </div>
+          <p class="text-[11px] text-slate-400" id="inspectorAiReason">
+            Reason...
+          </p>
+        </div>
+
+        <!-- Tags Management within modal -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-slate-200">Assigned Tags</span>
+            <span class="text-[11px] text-slate-500">Click tag to remove</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5" id="inspectorTagsList"></div>
+          <div class="flex items-center gap-2 pt-2">
+            <input 
+              type="text" 
+              id="inspectorNewTagInput" 
+              placeholder="Add tag (e.g. important, study)..." 
+              class="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              onkeydown="if(event.key === 'Enter') addTagFromInspector()"
+            >
+            <button onclick="addTagFromInspector()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-medium">
+              Add Tag
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: Extracted Document Content -->
+      <div id="inspectorTabContent" class="hidden flex-1 flex flex-col gap-2 text-xs">
+        <div class="flex items-center justify-between text-slate-400">
+          <span>Full text extracted via Document Reader:</span>
+          <button onclick="copyExtractedText()" class="hover:text-indigo-400 flex items-center gap-1 font-medium">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            <span>Copy Text</span>
+          </button>
+        </div>
+        <div class="flex-1 bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-slate-300 overflow-y-auto max-h-96 whitespace-pre-wrap leading-relaxed select-text" id="inspectorExtractedText">
+          Extracted document content...
+        </div>
+      </div>
+
+      <!-- TAB 3: Retention & Lifecycle -->
+      <div id="inspectorTabRetention" class="hidden flex-1 overflow-y-auto space-y-4 text-xs">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+          <h4 class="font-semibold text-slate-200">Lifecycle Details</h4>
+          <div class="grid grid-cols-2 gap-3 text-slate-300">
+            <div>
+              <span class="text-slate-500 block">Uploaded Date:</span>
+              <span id="inspectorCreatedAt" class="font-mono">-</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block">Current Age:</span>
+              <span id="inspectorAgeText" class="font-bold">-</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block">Retention Status:</span>
+              <span id="inspectorRetentionStatusBadge">-</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block">Protection Level:</span>
+              <span id="inspectorProtectionText">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Age Simulator in Inspector -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-slate-200">Simulate Document Age</span>
+            <span class="text-[11px] text-indigo-400">Test retention permission triggers</span>
+          </div>
+          <p class="text-[11px] text-slate-400">
+            Change this file's age to test how Aegis asks permission for deletion:
+          </p>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="simulateAgeCurrentFile(5)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700">5 days (Active)</button>
+            <button onclick="simulateAgeCurrentFile(35)" class="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 rounded-lg border border-rose-800/60">&gt; 1 Month (35d - Overdue for 30d)</button>
+            <button onclick="simulateAgeCurrentFile(65)" class="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 rounded-lg border border-rose-800/60">&gt; 2 Months (65d - Overdue for 60d)</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MANUAL RENAME MODAL -->
+  <div id="renameModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+    <div class="glass-panel w-full max-w-md rounded-2xl border border-slate-700/80 shadow-2xl p-6 relative flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-slate-100 flex items-center gap-2">
+          <i data-lucide="edit-3" class="w-4 h-4 text-indigo-400"></i>
+          Rename File
+        </h3>
+        <button onclick="closeRenameModal()" class="text-slate-400 hover:text-slate-200 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div>
+        <label class="text-xs text-slate-400 block mb-1">Enter new filename</label>
+        <input 
+          type="text" 
+          id="manualRenameInput" 
+          class="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-indigo-500 font-mono"
+          onkeydown="if(event.key === 'Enter') submitManualRename()"
+        >
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800 text-xs">
+        <button onclick="closeRenameModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium">
+          Cancel
+        </button>
+        <button onclick="submitManualRename()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold shadow-md shadow-indigo-600/30">
+          Save Name
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUICK TAG POPOVER MODAL (For 1-click adding popular tags to files) -->
+  <div id="quickTagModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm" onclick="closeQuickTagModal()">
+    <div class="glass-panel w-full max-w-sm rounded-2xl border border-slate-700 shadow-2xl p-5 flex flex-col gap-3" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <span class="text-xs font-bold text-slate-200">Add Tag to File</span>
+        <button onclick="closeQuickTagModal()" class="text-slate-400 hover:text-slate-200">×</button>
+      </div>
+      <div class="flex flex-wrap gap-1.5 pt-1">
+        <button onclick="applyQuickTag('important')" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25">🛡️ important</button>
+        <button onclick="applyQuickTag('study')" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25">📚 study</button>
+        <button onclick="applyQuickTag('temporary')" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25">⏱️ temporary</button>
+        <button onclick="applyQuickTag('finance')" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25">💳 finance</button>
+        <button onclick="applyQuickTag('work')" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-blue-500/15 text-blue-300 border border-blue-500/30 hover:bg-blue-500/25">💼 work</button>
+      </div>
+      <div class="pt-2">
+        <label class="text-[11px] text-slate-400 block mb-1">Or type custom tag:</label>
+        <div class="flex gap-2">
+          <input type="text" id="customTagModalInput" placeholder="e.g. project-x" class="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-indigo-500" onkeydown="if(event.key==='Enter') submitCustomTagFromModal()">
+          <button onclick="submitCustomTagFromModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- APP LOGIC SCRIPT -->
+  <script src="vendor/pdf.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="local-api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

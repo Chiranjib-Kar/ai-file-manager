@@ -50,10 +50,15 @@
           </div>
         </div>
 
-        <!-- Mobile upload trigger -->
-        <button onclick="openUploadModal()" class="md:hidden p-2.5 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30">
-          <i data-lucide="upload-cloud" class="w-5 h-5"></i>
-        </button>
+        <!-- Mobile actions: filters/settings drawer + upload -->
+        <div class="md:hidden flex items-center gap-2">
+          <button onclick="toggleMobileDrawer()" class="p-2.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700" title="Filters & settings">
+            <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+          </button>
+          <button onclick="openUploadModal()" class="p-2.5 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30" title="Upload files">
+            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+          </button>
+        </div>
       </div>
 
       <!-- SEARCH TASKBAR -->
@@ -157,8 +162,36 @@
   <!-- MAIN APP CONTAINER -->
   <div class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 flex flex-col md:flex-row gap-6">
 
-    <!-- LEFT SIDEBAR -->
-    <aside class="w-full md:w-64 shrink-0 flex flex-col gap-5">
+    <!-- Mobile drawer backdrop -->
+    <div id="drawerBackdrop" class="hidden fixed inset-0 z-40 bg-black/60 md:hidden" onclick="toggleMobileDrawer(false)"></div>
+
+    <!-- LEFT SIDEBAR (slide-in drawer on phones) -->
+    <aside id="sidebar" class="sidebar-drawer w-full md:w-64 shrink-0 flex-col gap-5">
+
+      <!-- Mobile-only: drawer header + settings that are in the top bar on desktop -->
+      <div class="md:hidden flex items-center justify-between">
+        <span class="text-sm font-bold text-slate-100">Filters & Settings</span>
+        <button onclick="toggleMobileDrawer(false)" class="p-1.5 text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="md:hidden glass-card rounded-2xl p-4 space-y-3 text-xs">
+        <label class="flex items-center justify-between gap-2">
+          <span class="flex items-center gap-1.5 text-slate-400"><i data-lucide="palette" class="w-3.5 h-3.5 text-emerald-400"></i>Theme</span>
+          <select id="themeSelectMobile" onchange="changeTheme(this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200">
+            <option value="emerald">🌿 Emerald Mint</option>
+            <option value="amethyst">👑 Royal Amethyst</option>
+            <option value="cyber">🌌 Cyber Titanium</option>
+            <option value="light">💎 Nordic Light</option>
+          </select>
+        </label>
+        <label class="flex items-center justify-between gap-2">
+          <span class="flex items-center gap-1.5 text-slate-400"><i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400"></i>Delete review after</span>
+          <select id="retentionSelectMobile" onchange="changeRetentionPolicy(this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200">
+            <option value="30">1 Month (30d)</option>
+            <option value="60">2 Months (60d)</option>
+            <option value="90">3 Months (90d)</option>
+          </select>
+        </label>
+      </div>
 
       <!-- Vault Quick Overview Card -->
       <div class="glass-card rounded-2xl p-4">
@@ -258,6 +291,21 @@
         <div class="flex flex-wrap gap-1.5" id="tagCloud">
           <!-- Injected dynamically -->
         </div>
+      </div>
+
+      <!-- ANDROID APP DOWNLOAD CARD (Web only) -->
+      <div id="downloadApkCard" class="glass-card rounded-2xl p-4 space-y-2.5">
+        <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
+          <i data-lucide="smartphone" class="w-4 h-4 text-emerald-400"></i>
+          <span>Android Phone App</span>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Install Aegis AI Vault on your Android phone — works offline with full PDF &amp; Word reading.
+        </p>
+        <a href="/download-app" download="Aegis-AI-File-Manager.apk" class="w-full flex items-center justify-center gap-2 px-3 py-2 btn-primary-gradient text-xs font-semibold rounded-xl transition-all">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Download APK</span>
+        </a>
       </div>
 
     </aside>
@@ -619,9 +667,9 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <a id="inspectorDownloadLink" href="#" download class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300" title="Download File">
+          <button id="inspectorDownloadLink" onclick="state.currentInspectedFile && downloadFile(state.currentInspectedFile.id)" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300" title="Download File">
             <i data-lucide="download" class="w-4 h-4"></i>
-          </a>
+          </button>
           <button onclick="closeInspectorModal()" class="text-slate-400 hover:text-slate-200 p-1">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>

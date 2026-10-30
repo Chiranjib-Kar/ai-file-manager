@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shield emblem -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M54,24L78,34V53C78,68.5 67.8,81.8 54,86C40.2,81.8 30,68.5 30,53V34L54,24Z" />
+    <!-- Sparkle star core -->
+    <path
+        android:fillColor="#ECFDF5"
+        android:pathData="M54,36L58.2,48.8L71,53L58.2,57.2L54,70L49.8,57.2L37,53L49.8,48.8Z" />
+</vector>

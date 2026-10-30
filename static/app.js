@@ -75,6 +75,8 @@ function applyTheme(themeName, notify = true) {
 
   const select = document.getElementById('themeSelect');
   if (select) select.value = themeName;
+  const mobileSelect = document.getElementById('themeSelectMobile');
+  if (mobileSelect) mobileSelect.value = themeName;
 
   const names = {
     emerald: '🌿 Emerald Mint',
@@ -86,6 +88,17 @@ function applyTheme(themeName, notify = true) {
   if (notify) {
     showToast(`Color template changed to ${names[themeName] || themeName}`, 'success');
   }
+}
+
+// Mobile Sidebar Drawer Toggle
+function toggleMobileDrawer(force) {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('drawerBackdrop');
+  if (!sidebar || !backdrop) return;
+  const shouldOpen = typeof force === 'boolean' ? force : !sidebar.classList.contains('open');
+  sidebar.classList.toggle('open', shouldOpen);
+  backdrop.classList.toggle('hidden', !shouldOpen);
+  renderIcons();
 }
 
 function setupKeyboardShortcuts() {
@@ -106,6 +119,7 @@ function setupKeyboardShortcuts() {
       closeInspectorModal();
       closeRenameModal();
       closeQuickTagModal();
+      toggleMobileDrawer(false);
       hideSearchDropdown();
     }
   });
@@ -205,10 +219,14 @@ async function checkRetentionOverview() {
       banner.classList.add('hidden');
     }
 
-    // Update retention select element
+    // Update retention select elements
     const retSelect = document.getElementById('retentionSelect');
     if (retSelect && overview.retention_days) {
       retSelect.value = overview.retention_days.toString();
+    }
+    const retSelectMobile = document.getElementById('retentionSelectMobile');
+    if (retSelectMobile && overview.retention_days) {
+      retSelectMobile.value = overview.retention_days.toString();
     }
 
     // Update sidebar counts
@@ -557,7 +575,7 @@ function renderFileCard(file) {
             <!-- Manual Rename Button -->
             <button 
               onclick="event.stopPropagation(); openRenameModal('${file.id}', '${escapeQuotes(file.filename)}')" 
-              class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-400 p-1 rounded-md hover:bg-slate-800 transition-all" 
+              class="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-slate-400 hover:text-indigo-400 p-1 rounded-md hover:bg-slate-800 transition-all" 
               title="Rename file"
             >
               <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
@@ -632,14 +650,13 @@ function renderFileCard(file) {
           </button>
 
           <!-- Download -->
-          <a 
-            href="/api/download/${file.id}" 
-            download 
+          <button 
+            onclick="downloadFile('${file.id}')" 
             class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors"
             title="Download file"
           >
             <i data-lucide="download" class="w-3.5 h-3.5"></i>
-          </a>
+          </button>
 
           <!-- Delete File -->
           <button 
@@ -766,18 +783,22 @@ function hideSearchDropdown() {
 // FILTER HANDLERS
 function setContextFilter(context) {
   state.activeContext = context;
+  toggleMobileDrawer(false);
   fetchFiles();
 }
 function setFileTypeFilter(type) {
   state.activeFileType = type;
+  toggleMobileDrawer(false);
   fetchFiles();
 }
 function setTagFilter(tag) {
   state.activeTag = state.activeTag === tag ? 'All' : tag;
+  toggleMobileDrawer(false);
   fetchFiles();
 }
 function setRetentionFilter(status) {
   state.activeRetentionFilter = status;
+  toggleMobileDrawer(false);
   fetchFiles();
 }
 function resetFilters() {
@@ -790,7 +811,27 @@ function resetFilters() {
   if (searchInput) searchInput.value = '';
   const clearBtn = document.getElementById('clearSearchBtn');
   if (clearBtn) clearBtn.classList.add('hidden');
+  toggleMobileDrawer(false);
   fetchFiles();
+}
+
+// DOWNLOAD / SAVE FILE (works on both web server and Android on-device storage)
+async function downloadFile(fileId) {
+  try {
+    if (window.AegisLocal && typeof window.AegisLocal.download === 'function') {
+      const msg = await window.AegisLocal.download(fileId);
+      showToast(msg || 'Saved to Downloads', 'success');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = `/api/download/${fileId}`;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (err) {
+    showToast(err.message || 'Download failed', 'error');
+  }
 }
 
 function setGroupingMode(mode) {
@@ -1141,7 +1182,6 @@ async function openInspectorModal(fileId) {
     document.getElementById('inspectorFilename').textContent = file.filename;
     document.getElementById('inspectorCategoryBadge').textContent = file.context_category;
     document.getElementById('inspectorMetaText').textContent = `Size: ${formatBytes(file.size_bytes)} • ${file.word_count || 0} words • ${file.reading_time_minutes || 1} min read`;
-    document.getElementById('inspectorDownloadLink').href = `/api/download/${file.id}`;
 
     // AI Tab
     document.getElementById('inspectorSummary').textContent = file.ai_summary || 'No summary available.';
@@ -1247,7 +1287,27 @@ async function simulateAgeCurrentFile(days) {
 
 function copyExtractedText() {
   const text = document.getElementById('inspectorExtractedText').textContent;
-  navigator.clipboard.writeText(text);
+  if (window.AegisNative && typeof window.AegisNative.copyText === 'function') {
+    window.AegisNative.copyText(text);
+    showToast('Document text copied to clipboard!', 'success');
+    return;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Document text copied to clipboard!', 'success');
+    }).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  ta.remove();
   showToast('Document text copied to clipboard!', 'success');
 }
 
@@ -1270,7 +1330,8 @@ function closeUploadModal() {
 
 function setupModalDropZone() {
   const dropZone = document.getElementById('dropZone');
-  if (!dropZone) return;
+  if (!dropZone || dropZone.dataset.bound) return;
+  dropZone.dataset.bound = '1';
 
   ['dragenter', 'dragover'].forEach(name => {
     dropZone.addEventListener(name, (e) => {

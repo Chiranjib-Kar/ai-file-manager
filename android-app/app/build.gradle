@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.aegis.filemanager'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.aegis.filemanager"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+        release {
+            def ksFile = file("keystore/aegis-release.jks")
+            if (ksFile.exists()) {
+                storeFile ksFile
+                storePassword "aegisvault"
+                keyAlias "aegis"
+                keyPassword "aegisvault"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (file("keystore/aegis-release.jks").exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity:1.9.0'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

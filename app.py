@@ -204,7 +204,8 @@ async def upload_files(
     custom_tag_list = [t.strip() for t in initial_tags.split(",") if t.strip()] if initial_tags else []
 
     for upload in files:
-        safe_filename = upload.filename
+        # Strip any directory components so uploads can't escape the storage folder
+        safe_filename = os.path.basename((upload.filename or "untitled").replace("\\", "/")) or "untitled"
         unique_prefix = uuid.uuid4().hex[:8]
         disk_filename = f"{unique_prefix}_{safe_filename}"
         dest_path = os.path.join(STORAGE_DIR, disk_filename)
@@ -420,6 +421,17 @@ def download_file(file_id: str):
 
 # Static files mounting
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+@app.get("/download-app")
+def download_android_apk():
+    apk_path = os.path.join(BASE_DIR, "Aegis-AI-File-Manager.apk")
+    if not os.path.exists(apk_path):
+        raise HTTPException(status_code=404, detail="Android APK has not been built yet.")
+    return FileResponse(
+        path=apk_path,
+        filename="Aegis-AI-File-Manager.apk",
+        media_type="application/vnd.android.package-archive"
+    )
 
 @app.get("/")
 def serve_index():

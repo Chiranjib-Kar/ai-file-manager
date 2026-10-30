@@ -1,72 +1,62 @@
 # Aegis AI File Manager 🛡️📁
 
-A modern, intelligent AI-powered file manager web application built with FastAPI and modern responsive UI. It automatically reads through document contents (PDF, Word DOCX, Markdown, Text, Code, CSV), performs semantic context segregation, proposes automatic AI filenames, provides full-text deep search, and protects files with an intelligent retention lifecycle system.
+A modern, intelligent AI-powered file manager available both as a **Web Application** (FastAPI + responsive UI) and an **Android Phone App** (`Aegis-AI-File-Manager.apk`). It starts with a clean empty vault and automatically reads inside your documents (PDF, Word `.docx`, Markdown, Text, Code, CSV), performs semantic context segregation, proposes standardized AI filenames, provides full-text deep search, and protects files with an intelligent retention lifecycle guardian.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Core Features (Web & Android App)
 
 ### 1. 🗂️ Intelligent File Segregation (Type & Context)
 - **Context-Aware Sorting**: Reads inside document bodies and automatically classifies files into semantic categories:
   - 📚 **Study & Education**: Lecture notes, textbooks, syllabi, assignments, academic papers
-  - 💳 **Finance & Invoices**: Billing statements, AWS/cloud receipts, budgets, purchase orders
+  - 💳 **Finance & Invoices**: Billing statements, receipts, budgets, purchase orders
   - 💼 **Work & Projects**: Specifications, sprint plans, architecture docs, team roadmaps
   - ⚖️ **Legal & Identity**: Non-disclosure agreements (NDAs), contracts, privacy policies
-  - 💻 **Code & Technical**: Python scripts, config files, SQL schemas, API endpoints
+  - 💻 **Code & Technical**: Python/JS scripts, config files, SQL schemas, API endpoints
   - 💡 **Personal & Notes**: Journals, daily scratchpads, checklists
-- **Type Sorting**: Quickly filter or group by Documents, Code & Data, Spreadsheets, Images, Archives.
-- **View Switcher**: Seamlessly toggle between "Group by Context", "Group by Type", or flat "All Files" view.
+- **Type Sorting**: Filter or group by Documents, Code & Data, Spreadsheets, Images, Media, or Archives.
+- **View Switcher**: Seamlessly toggle between **Group by Context**, **Group by Type**, or flat **All Files** view.
 
 ### 2. ✨ Automatic & Manual File Renaming
-- **AI Document Reading Engine**: Reads through PDFs (via `pypdf`), Word documents (via `python-docx`), Markdown, and plain text.
-- **Automatic Standardized Renaming**: Analyzes document titles, dates, and subjects to propose clean names like `Finance_Receipt_AWS_Mar2026.txt` or `Study_Distributed_Systems_Lecture4.md`.
-- **1-Click Apply**: Batch apply AI names or accept suggestions individually.
-- **Manual Inline Renaming**: Direct editing with extension protection.
+- **AI Document Reading Engine**: Reads through PDFs (`pypdf` on Web / `pdf.js` on Android), Word documents (`python-docx` on Web / `JSZip` + XML parser on Android), Markdown, CSV, and plain text.
+- **Automatic Standardized Renaming**: Analyzes document headings, dates, and subjects to propose clean names like `Finance_Receipt_AWS_Mar2026.txt` or `Study_Physics_Lecture_3.docx`.
+- **1-Click Apply**: Accept AI suggestions individually, batch-rename all pending files, or auto-rename on upload.
+- **Manual Renaming**: Touch-friendly inline rename modal with automatic file-extension preservation.
 
 ### 3. 🔍 Search Taskbar
-- **Ctrl + K Shortcut**: Instant keyboard focus.
-- **Deep Full-Text Search**: Matches filename, tags, context, and **deep inside the extracted document body**.
+- **`Ctrl + K` Shortcut**: Instant keyboard focus on desktop, plus dedicated mobile search bar.
+- **Deep Full-Text Search**: Matches filename, tags, semantic context, AI summary, and **deep inside the extracted document body**.
 - **Live Autocomplete Dropdown**: Real-time matching previews with context badges.
 
 ### 4. ⏳ Retention Guardian (1 or 2 Months Deletion Permission)
-- **Configurable Policy**: 1 Month (30 days), 2 Months (60 days), or 90 days.
-- **🛡️ Important Tag Immunity Guarantee**: Any file tagged `important` (or pinned) is strictly protected and will **NEVER** be deleted by retention cleanup.
-- **Explicit Permission Review**: When non-important files exceed the retention threshold:
-  - An alert banner notifies you: *"⚠️ 2 files are older than 30 days and ready for deletion permission review!"*
-  - Interactive Review Modal lets you:
-    1. 🗑️ **Approve & Delete**: Permanently clean up selected stale files.
-    2. ⏳ **Extend Retention**: Keep files for another 30 or 60 days.
-    3. 🛡️ **Mark as 'Important'**: Add the `important` tag to protect them permanently.
-- **Age Simulator**: Built-in simulator to test file ages (e.g. simulate 35 days or 65 days old) for instant demonstration!
+- **Configurable Policy**: **1 Month (30 days)**, **2 Months (60 days)**, or **90 days**.
+- **🛡️ `important` Tag Immunity**: Any file saved with the `important` tag is strictly protected and will **never** be flagged or deleted by retention cleanup.
+- **Explicit Permission Review**: When non-important files exceed the retention threshold, Aegis asks your permission to:
+  1. 🗑️ **Approve & Delete** selected stale files
+  2. ⏳ **Extend Retention** (+30 or +60 days)
+  3. 🛡️ **Protect as `important`** permanently
 
-### 5. 🏷️ Flexible Tags System
-- Pre-built quick tags: `important`, `temporary`, `study`, `work`, `finance`, `draft`, `receipt`.
-- Color-coded tag chips with instant filter capability.
-- Add or remove tags on the fly per file card or inside the document inspector.
+### 5. 🏷️ Tags & Themes
+- Quick & custom tags (`important`, `temporary`, `study`, `work`, `finance`, `draft`, `receipt`, or any custom tag).
+- 4 built-in themes: **🌿 Emerald Mint** (default), **🔮 Royal Amethyst**, **⚡ Cyber Titanium**, and **☀️ Nordic Light**.
 
 ---
 
-## 🚀 Getting Started
+## 📱 Android Phone App (`Aegis-AI-File-Manager.apk`)
 
-### Prerequisites
-- Python 3.10+ (Tested on Python 3.14)
+The Android app (`com.aegis.filemanager`) runs **100% offline on your phone** with its own private on-device vault:
+- **Install from Website**: Open the web app on your phone and tap **Download APK** in the menu drawer (`/download-app`), or copy `Aegis-AI-File-Manager.apk` directly to your phone.
+- **Share to Aegis**: Share any PDF, `.docx`, text, or image from WhatsApp, Gmail, or Android Files directly into **Aegis AI Vault** from the Android Share sheet.
+- **Save to Phone Downloads**: Tap download on any vaulted file to export it directly into your phone's `Downloads` folder.
+- **Rebuild APK from Source**: Run `android-app\build-apk.bat`.
 
-### Quick Run
-1. Navigate to the project folder:
-   ```powershell
-   cd C:\Users\HP\.gemini\antigravity\scratch\ai-file-manager
-   ```
-2. For local use:
-   - Double-click [`run.bat`](file:///C:/Users/HP/.gemini/antigravity/scratch/ai-file-manager/run.bat) or run `python app.py`
-   - Access at `http://localhost:8000`
-3. For sharing to other devices (phones, tablets, external friends):
-   - Double-click [`share.bat`](file:///C:/Users/HP/.gemini/antigravity/scratch/ai-file-manager/share.bat)
-   - It will start the server and give you an instant, secure `https://....trycloudflare.com` link that works anywhere!
+---
 
-### 🎲 Instant Testing with Sample Data
-Click the **"Load Samples"** button at the top of the app. It will instantly generate 6 realistic files across multiple contexts and ages, demonstrating:
-- An expired temporary invoice (45 days old) eligible for deletion review.
-- A confidential legal NDA (75 days old) protected by the `important` tag.
-- Computer science lecture notes tagged `study`.
-- An expired product roadmap draft (65 days old).
-- A departmental expense CSV and python security middleware.
+## 💻 Running the Web App
+
+### Local Run
+1. Run `run.bat` or `python app.py`
+2. Open `http://localhost:8000`
+
+### 24/7 Cloud Deployment (Render.com)
+This repository includes [`render.yaml`](render.yaml) pre-configured with service name `ai-file-manager` (`uvicorn app:app --host 0.0.0.0 --port $PORT`).

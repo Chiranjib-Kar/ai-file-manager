@@ -46,6 +46,13 @@ A modern, intelligent AI-powered file manager available both as a **Web Applicat
 - **Zero-Knowledge Share Links (`#share=<id>&key=<secret>`)**: Share individual files using ephemeral 256-bit AES-GCM keys placed strictly after `#` in the URL (never sent to the server), with configurable expiry (24h / 7d / 30d) and optional **Burn after 1st download**.
 - **Live Server Ciphertext Proof**: Open any file's **E2EE Security Proof** tab in the Document Inspector to verify live hexadecimal ciphertext stored on disk.
 
+### 7. ⚡ Automatic Device & Live Downloads Sync (Zero File Picking)
+- **Existing Files + Live Downloads**: Automatically accesses existing documents on your device (`Downloads`, `Documents`, `Desktop`) and watches in real time (every 4 seconds + `FileSystemObserver`) for any new file you download—no file-by-file picking required.
+- **Dual-Mode Engine**:
+  - **Local Website (`http://localhost:8000`)**: Zero-click automatic discovery & live watching via a strictly loopback-guarded bridge (blocked on any tunnel, reverse proxy, or external host).
+  - **Public HTTPS Website (`onrender.com` / `trycloudflare.com`)**: Uses the W3C **File System Access API** (`showDirectoryPicker` + persistent `IndexedDB` folder handles + `FileSystemObserver`) so a one-time folder authorization automatically imports existing files and continuously syncs every new download live.
+- **100% End-to-End Encrypted**: Every auto-synced or newly downloaded file is AI-read, categorized, tagged, and encrypted with `AES-256-GCM` locally in your browser before storage.
+
 ---
 
 ## 📱 Android Phone App (`Aegis-AI-File-Manager.apk`)

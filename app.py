@@ -1,11 +1,14 @@
+import hashlib
+import mimetypes
 import os
 import re
 import secrets
 import shutil
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Header
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Header, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -811,6 +814,154 @@ def revoke_encrypted_share(share_id: str, x_revoke_token: Optional[str] = Header
         except Exception:
             pass
     return {"message": "Encrypted share link permanently revoked", "share_id": share_id}
+
+
+# ==============================================================================
+# Direct Loopback Local-Device Auto-Discovery & Live Downloads Feed
+# Strictly accessible ONLY from direct local browser (localhost / 127.0.0.1)
+# with zero reverse-proxy/tunnel headers. On public links (Render / Cloudflare),
+# this returns 403 and the browser uses the W3C File System Access API instead.
+# ==============================================================================
+_LOCAL_DEVICE_SECRET = secrets.token_bytes(32)
+_LOCAL_TOKEN_MAP: Dict[str, str] = {}
+
+_SKIP_DIRS = {
+    "node_modules", "__pycache__", ".git", ".svn", ".hg", "venv", ".venv",
+    "AppData", "Application Data", "My Music", "My Pictures", "My Videos",
+    "$RECYCLE.BIN", "System Volume Information"
+}
+_SKIP_EXTS = {
+    ".exe", ".msi", ".dll", ".sys", ".lnk", ".ini", ".db", ".tmp", ".temp",
+    ".crdownload", ".part", ".opdownload", ".download", ".onetoc2", ".iso",
+    ".dmg", ".vmdk", ".cab", ".bin", ".log"
+}
+_MAX_AUTO_SYNC_BYTES = 15 * 1024 * 1024  # 15 MB cap per auto-synced file
+
+
+def _verify_direct_local_browser(request: Request):
+    client_host = (request.client.host if request.client else "") or ""
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Local device bridge requires direct localhost access")
+
+    # Block any request routed through a tunnel or cloud reverse proxy (Cloudflare, Render, ngrok, etc.)
+    proxy_headers = (
+        "cf-connecting-ip", "cf-ray", "x-forwarded-for", "x-forwarded-host",
+        "x-forwarded-proto", "x-real-ip", "forwarded", "true-client-ip"
+    )
+    hdrs = request.headers
+    if any(h in hdrs for h in proxy_headers):
+        raise HTTPException(status_code=403, detail="Proxied/tunneled requests cannot read host files")
+
+    host_hdr = (hdrs.get("host") or "").lower().split(":")[0]
+    if host_hdr not in ("localhost", "127.0.0.1", "[::1]"):
+        raise HTTPException(status_code=403, detail="Invalid Host header for local device bridge")
+
+    sec_site = (hdrs.get("sec-fetch-site") or "").lower()
+    if sec_site and sec_site not in ("same-origin", "none"):
+        raise HTTPException(status_code=403, detail="Cross-site access denied")
+
+
+def _get_watched_local_roots() -> List[tuple]:
+    # Never expose server container filesystem in cloud environments (e.g. Render)
+    if os.environ.get("RENDER") or os.environ.get("DYNO") or os.environ.get("K_SERVICE"):
+        return []
+    home = os.path.expanduser("~")
+    candidates = [
+        ("Downloads", os.path.join(home, "Downloads")),
+        ("Documents", os.path.join(home, "Documents")),
+        ("Desktop", os.path.join(home, "Desktop")),
+        ("OneDrive Downloads", os.path.join(home, "OneDrive", "Downloads")),
+        ("OneDrive Documents", os.path.join(home, "OneDrive", "Documents")),
+        ("OneDrive Desktop", os.path.join(home, "OneDrive", "Desktop")),
+    ]
+    seen_real = set()
+    roots = []
+    for label, path in candidates:
+        if os.path.isdir(path):
+            rp = os.path.normcase(os.path.realpath(path))
+            if rp not in seen_real:
+                seen_real.add(rp)
+                roots.append((label, path))
+    return roots
+
+
+@app.get("/api/local-device/files")
+def list_local_device_files(request: Request):
+    _verify_direct_local_browser(request)
+    roots = _get_watched_local_roots()
+    if not roots:
+        raise HTTPException(status_code=404, detail="No local user folders in cloud environment")
+
+    now_ts = time.time()
+    discovered = []
+    project_real = os.path.normcase(os.path.realpath(BASE_DIR))
+
+    for label, root_dir in roots:
+        for cur_root, dirs, files in os.walk(root_dir):
+            rel_dir = os.path.relpath(cur_root, root_dir)
+            depth = 0 if rel_dir == "." else len(rel_dir.split(os.sep))
+            if depth >= 3:
+                dirs[:] = []
+            else:
+                dirs[:] = [
+                    d for d in dirs
+                    if not d.startswith(".") and not d.startswith("$") and d not in _SKIP_DIRS
+                ]
+
+            if os.path.normcase(os.path.realpath(cur_root)).startswith(project_real):
+                continue
+
+            for fname in files:
+                if fname.startswith(".") or fname.startswith("~$"):
+                    continue
+                ext = os.path.splitext(fname)[1].lower()
+                if not ext or ext in _SKIP_EXTS:
+                    continue
+                full_path = os.path.join(cur_root, fname)
+                try:
+                    st = os.stat(full_path)
+                except OSError:
+                    continue
+                if st.st_size <= 0 or st.st_size > _MAX_AUTO_SYNC_BYTES:
+                    continue
+                # Wait at least 1.5s after last write so active downloads finish cleanly
+                if (now_ts - st.st_mtime) < 1.5:
+                    continue
+
+                rel_file = os.path.relpath(full_path, root_dir).replace("\\", "/")
+                source_key = f"local::{label}/{rel_file}::{st.st_size}::{int(st.st_mtime)}"
+                token = hashlib.sha256(_LOCAL_DEVICE_SECRET + full_path.encode("utf-8", "ignore")).hexdigest()[:32]
+                _LOCAL_TOKEN_MAP[token] = full_path
+                mime_guess, _ = mimetypes.guess_type(fname)
+                discovered.append({
+                    "token": token,
+                    "name": fname,
+                    "folder": label,
+                    "relative_path": f"{label}/{rel_file}",
+                    "size_bytes": st.st_size,
+                    "mtime_ms": int(st.st_mtime * 1000),
+                    "mime_type": mime_guess or "application/octet-stream",
+                    "source_key": source_key
+                })
+
+    # Newest downloaded / modified files first!
+    discovered.sort(key=lambda x: x["mtime_ms"], reverse=True)
+    return {
+        "mode": "local_loopback",
+        "folders": [lbl for lbl, _ in roots],
+        "count": len(discovered),
+        "files": discovered
+    }
+
+
+@app.get("/api/local-device/read")
+def read_local_device_file(token: str, request: Request):
+    _verify_direct_local_browser(request)
+    full_path = _LOCAL_TOKEN_MAP.get(token)
+    if not full_path or not os.path.isfile(full_path):
+        raise HTTPException(status_code=404, detail="Local file token expired or file moved")
+    mime_guess, _ = mimetypes.guess_type(full_path)
+    return FileResponse(path=full_path, media_type=mime_guess or "application/octet-stream")
 
 
 # Static files mounting

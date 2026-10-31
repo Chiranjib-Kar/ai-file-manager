@@ -337,6 +337,70 @@
     <!-- MAIN FILES WORKSPACE -->
     <main class="flex-1 min-w-0 flex flex-col gap-4">
 
+      <!-- AUTOMATIC DEVICE & LIVE DOWNLOADS SYNC BANNER -->
+      <div id="autoSyncBanner" class="glass-card rounded-2xl p-3.5 border border-emerald-500/25 space-y-2.5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="autoSyncStatusBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">LIVE AUTO-SYNC</span>
+              <h2 id="autoSyncStatusText" class="text-xs sm:text-sm font-bold text-slate-100">Automatically accessing existing files &amp; live Downloads</h2>
+            </div>
+            <p id="autoSyncSubText" class="text-[11px] text-slate-400 leading-relaxed">
+              Existing files on your device and any new files you download are automatically AI-segregated &amp; AES-256-GCM encrypted without manual file selection.
+            </p>
+            <div id="autoSyncFoldersChips" class="flex flex-wrap items-center gap-1.5 pt-0.5"></div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              id="autoSyncResumeBtn"
+              onclick="resumeAutoSyncFolders()"
+              class="hidden flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-xl text-xs font-semibold transition-all"
+            >
+              <i data-lucide="play" class="w-3.5 h-3.5"></i>
+              <span>Resume Saved Folders</span>
+            </button>
+
+            <button
+              onclick="connectAutoSyncFolder()"
+              title="Grant folder access (e.g. Downloads, Documents, Desktop) for automatic existing-file import & live download watching"
+              class="flex items-center gap-1.5 px-3 py-1.5 btn-primary-gradient text-xs font-semibold rounded-xl shadow-sm transition-all"
+            >
+              <i data-lucide="folder-sync" class="w-3.5 h-3.5"></i>
+              <span>Auto-Sync Device / Downloads</span>
+            </button>
+
+            <button
+              onclick="rescanAutoSyncFiles()"
+              title="Rescan watched folders for any unsynced files"
+              class="flex items-center gap-1 px-2.5 py-1.5 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-700/80 rounded-xl text-xs font-medium transition-all"
+            >
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Rescan</span>
+            </button>
+
+            <button
+              id="autoSyncPauseBtn"
+              onclick="toggleAutoSyncPause()"
+              class="hidden px-2.5 py-1.5 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-700/80 rounded-xl text-xs font-medium transition-all"
+            >
+              Pause
+            </button>
+
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-950/70 border border-slate-800 rounded-xl text-[11px] text-slate-300 cursor-pointer select-none" title="Automatically apply AI standardized names to auto-synced files">
+              <input type="checkbox" id="autoSyncRenameCheckbox" onchange="toggleAutoSyncRename(this.checked)" class="w-3.5 h-3.5 rounded accent-emerald-500">
+              <span>Auto AI-Rename</span>
+            </label>
+
+            <input type="file" id="fallbackDirectoryInput" webkitdirectory directory multiple class="hidden" onchange="handleFallbackDirectorySelect(event)">
+          </div>
+        </div>
+
+        <div id="autoSyncProgressWrap" class="hidden w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+          <div id="autoSyncProgressFill" class="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300" style="width: 8%"></div>
+        </div>
+      </div>
+
       <!-- QUICK CONTEXT HORIZONTAL FILTER TABS -->
       <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
         <button onclick="setContextFilter('All')" class="quick-pill px-3 py-1.5 rounded-xl font-medium transition-all shrink-0 bg-indigo-600 text-white shadow-sm" data-context="All">
@@ -462,17 +526,27 @@
 
         <h3 class="text-xl font-extrabold text-slate-100 tracking-tight">Your File Vault is Ready</h3>
         <p class="text-sm text-slate-400 max-w-lg mt-1.5 mb-6 leading-relaxed">
-          Drag and drop your documents here, or click the button below to upload. Aegis automatically reads your documents, categorizes context, proposes clean names, and tracks retention.
+          Automatically sync all existing files on your device &amp; live Downloads without picking individual files, or drag and drop specific documents below.
         </p>
 
-        <!-- Large Upload Button -->
-        <button 
-          onclick="openUploadModal()" 
-          class="flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-sm font-bold rounded-2xl shadow-xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 mb-6"
-        >
-          <i data-lucide="file-up" class="w-5 h-5"></i>
-          <span>Choose Files to Upload</span>
-        </button>
+        <!-- Primary Action Buttons -->
+        <div class="flex flex-wrap items-center justify-center gap-3 mb-6">
+          <button
+            onclick="connectAutoSyncFolder()"
+            class="flex items-center gap-2.5 px-6 py-3 btn-primary-gradient text-white text-sm font-bold rounded-2xl shadow-xl transition-all hover:scale-105 active:scale-95"
+          >
+            <i data-lucide="folder-sync" class="w-5 h-5"></i>
+            <span>Auto-Sync Device &amp; Downloads</span>
+          </button>
+
+          <button 
+            onclick="openUploadModal()" 
+            class="flex items-center gap-2.5 px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-sm font-semibold rounded-2xl transition-all"
+          >
+            <i data-lucide="file-up" class="w-4 h-4 text-indigo-400"></i>
+            <span>Manual File Upload</span>
+          </button>
+        </div>
 
         <!-- Supported formats badges -->
         <div class="flex items-center justify-center gap-2 flex-wrap text-[11px] text-slate-400">
@@ -1162,10 +1236,11 @@
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toastContainer" class="fixed bottom-5 right-5 z-[70] flex flex-col gap-2 pointer-events-none"></div>
 
-  <!-- OFFLINE / CLIENT-SIDE READERS, E2EE ENGINE & APP LOGIC -->
+  <!-- OFFLINE / CLIENT-SIDE READERS, E2EE ENGINE, AUTO-SYNC & APP LOGIC -->
   <script src="/static/vendor/pdf.min.js"></script>
   <script src="/static/vendor/jszip.min.js"></script>
   <script src="/static/e2ee.js"></script>
+  <script src="/static/device-sync.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

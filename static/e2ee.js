@@ -427,7 +427,7 @@
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = IS_ANDROID ? 'vendor/pdf.worker.min.js' : '/static/vendor/pdf.worker.min.js';
     const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
     const pages = [];
-    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
       let line = '', text = '';
@@ -723,60 +723,65 @@
     };
   }
 
+  async function encryptAndUploadSingleFile(file, opts = {}) {
+    const safeName = (opts.overrideName || file.name || 'untitled').split(/[\\/]/).pop() || 'untitled';
+    const ab = await file.arrayBuffer();
+    const plainU8 = new Uint8Array(ab);
+
+    // 1. Local AI reading & semantic segregation BEFORE encryption
+    const doc = await extractDocumentText(ab, safeName);
+    const ai = analyzeDocumentContext(safeName, doc.text);
+    const digest = await sha256Bytes(plainU8);
+    const initialTags = opts.initialTags || [];
+    const tags = [...new Set([...initialTags, ...(ai.suggested_tags || []).map(t => t.toLowerCase())])];
+
+    const sensitiveMeta = {
+      filename: opts.autoRename ? ai.ai_suggested_name : safeName,
+      original_filename: safeName,
+      mime_type: file.type || 'application/octet-stream',
+      file_type: categorizeFileType(safeName),
+      extension: extOf(safeName),
+      plaintext_size_bytes: plainU8.byteLength,
+      context_category: ai.context_category,
+      tags,
+      ai_summary: ai.summary,
+      extracted_text: doc.text,
+      ai_suggested_name: ai.ai_suggested_name,
+      ai_rename_reason: ai.ai_rename_reason,
+      word_count: doc.word_count,
+      reading_time_minutes: doc.reading_time_minutes,
+      sha256_fingerprint: toHex(digest),
+      device_source_key: opts.sourceKey || null,
+      device_folder: opts.folderLabel || null,
+      is_pinned: false
+    };
+
+    // 2. Encrypt file bytes & metadata locally with AES-256-GCM
+    const cipherEnvelope = await encryptBinaryEnvelope(plainU8, activeSession.rawEncKey);
+    const encrypted_meta = await encryptJsonMeta(sensitiveMeta, activeSession.rawEncKey);
+    const is_protected = tags.includes('important');
+
+    // 3. Upload ONLY opaque ciphertext (`cipher.enc`) to server
+    const outForm = new FormData();
+    outForm.append('encrypted_blob', new Blob([cipherEnvelope], { type: 'application/octet-stream' }), 'cipher.enc');
+    outForm.append('encrypted_meta', encrypted_meta);
+    outForm.append('size_bytes', String(plainU8.byteLength));
+    outForm.append('is_protected', String(is_protected));
+
+    const res = await e2eeServerFetch('/api/e2ee/files', { method: 'POST', body: outForm });
+    const savedRaw = await res.json();
+    decryptedCache.set(`${savedRaw.id}:${savedRaw.updated_at}`, sensitiveMeta);
+    return { ...sensitiveMeta, id: savedRaw.id, e2ee: true, size_bytes: plainU8.byteLength, created_at: savedRaw.created_at };
+  }
+
   async function handleE2EEUpload(formData) {
     const autoRename = String(formData.get('auto_rename')) === 'true';
     const initialTags = String(formData.get('initial_tags') || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const files = formData.getAll('files');
     const uploaded = [];
-
     for (const file of files) {
-      const safeName = (file.name || 'untitled').split(/[\\/]/).pop() || 'untitled';
-      const ab = await file.arrayBuffer();
-      const plainU8 = new Uint8Array(ab);
-
-      // 1. Local AI reading & semantic segregation BEFORE encryption
-      const doc = await extractDocumentText(ab, safeName);
-      const ai = analyzeDocumentContext(safeName, doc.text);
-      const digest = await sha256Bytes(plainU8);
-      const tags = [...new Set([...initialTags, ...(ai.suggested_tags || []).map(t => t.toLowerCase())])];
-
-      const sensitiveMeta = {
-        filename: autoRename ? ai.ai_suggested_name : safeName,
-        original_filename: safeName,
-        mime_type: file.type || 'application/octet-stream',
-        file_type: categorizeFileType(safeName),
-        extension: extOf(safeName),
-        plaintext_size_bytes: plainU8.byteLength,
-        context_category: ai.context_category,
-        tags,
-        ai_summary: ai.summary,
-        extracted_text: doc.text,
-        ai_suggested_name: ai.ai_suggested_name,
-        ai_rename_reason: ai.ai_rename_reason,
-        word_count: doc.word_count,
-        reading_time_minutes: doc.reading_time_minutes,
-        sha256_fingerprint: toHex(digest),
-        is_pinned: false
-      };
-
-      // 2. Encrypt file bytes & metadata locally with AES-256-GCM
-      const cipherEnvelope = await encryptBinaryEnvelope(plainU8, activeSession.rawEncKey);
-      const encrypted_meta = await encryptJsonMeta(sensitiveMeta, activeSession.rawEncKey);
-      const is_protected = tags.includes('important');
-
-      // 3. Upload ONLY opaque ciphertext (`cipher.enc`) to server
-      const outForm = new FormData();
-      outForm.append('encrypted_blob', new Blob([cipherEnvelope], { type: 'application/octet-stream' }), 'cipher.enc');
-      outForm.append('encrypted_meta', encrypted_meta);
-      outForm.append('size_bytes', String(plainU8.byteLength));
-      outForm.append('is_protected', String(is_protected));
-
-      const res = await e2eeServerFetch('/api/e2ee/files', { method: 'POST', body: outForm });
-      const savedRaw = await res.json();
-      decryptedCache.set(`${savedRaw.id}:${savedRaw.updated_at}`, sensitiveMeta);
-      uploaded.push({ ...sensitiveMeta, id: savedRaw.id, e2ee: true, size_bytes: plainU8.byteLength, created_at: savedRaw.created_at });
+      uploaded.push(await encryptAndUploadSingleFile(file, { autoRename, initialTags }));
     }
-
     return { uploaded, count: uploaded.length };
   }
 
@@ -968,11 +973,11 @@
     throw new Error(`Unhandled E2EE route: ${method} ${path}`);
   }
 
-  // Intercept `/api/files*`, `/api/stats`, `/api/retention*` while letting `/api/e2ee/*` & `/api/shares*` pass through
+  // Intercept `/api/files*`, `/api/stats`, `/api/retention*` while letting `/api/e2ee/*`, `/api/shares*` & `/api/local-device/*` pass through
   window.fetch = async function (input, init = {}) {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
     const p = url.pathname;
-    if (!p.startsWith('/api/') || p.startsWith('/api/e2ee/') || p.startsWith('/api/shares')) {
+    if (!p.startsWith('/api/') || p.startsWith('/api/e2ee/') || p.startsWith('/api/shares') || p.startsWith('/api/local-device/')) {
       return underlyingFetch(input, init);
     }
     const method = (init.method || 'GET').toUpperCase();
@@ -1193,13 +1198,26 @@
     };
   }
 
+  async function getVaultSourceKeys() {
+    if (!activeSession) return new Set();
+    const { entries } = await loadDecryptedVault();
+    const keys = new Set();
+    for (const e of entries) {
+      if (e.meta && e.meta.device_source_key) keys.add(e.meta.device_source_key);
+    }
+    return keys;
+  }
+
   window.AegisE2EE = {
     isUnlocked: () => Boolean(activeSession),
+    getVaultId: () => (activeSession ? activeSession.vaultId : null),
     isAndroid: IS_ANDROID,
     getStatus,
     unlockWithPassphrase,
     lockVault,
     generateStrongPassphrase,
+    encryptAndUploadSingleFile,
+    getVaultSourceKeys,
     downloadDecrypted,
     getServerProof,
     createEncryptedShareLink,

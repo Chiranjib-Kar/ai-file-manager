@@ -586,6 +586,7 @@ function renderFileCard(file) {
           <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-1 flex-wrap">
             <span class="px-1.5 py-0.2 rounded font-mono font-bold text-[9px] uppercase ${extBadge.pill}">${ext.replace('.', '')}</span>
             <span class="px-1.5 py-0.2 rounded font-mono font-bold text-[9px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">🔒 E2EE</span>
+            ${file.device_folder ? `<span class="px-1.5 py-0.2 rounded font-mono font-bold text-[9px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/25" title="Auto-synced from ${escapeHtml(file.device_folder)}">⚡ ${escapeHtml(file.device_folder)}</span>` : ''}
             <span>${formatBytes(file.size_bytes)}</span>
             <span>•</span>
             <span>${file.word_count || 0} words</span>
@@ -1487,6 +1488,9 @@ function initE2EEAndShareFlow() {
     renderWorkspace();
     renderIcons();
   }
+  if (window.AegisDeviceSync) {
+    window.AegisDeviceSync.start();
+  }
 }
 
 function syncVaultLockUI() {
@@ -1565,6 +1569,9 @@ async function submitVaultUnlock() {
     syncVaultLockUI();
     showToast(`Unlocked E2EE Vault (${info.keyFingerprint})`, 'success');
     fetchFiles();
+    if (window.AegisDeviceSync) {
+      window.AegisDeviceSync.start();
+    }
   } catch (err) {
     if (errEl) {
       errEl.textContent = err.message || String(err);
@@ -1588,7 +1595,41 @@ function lockVaultSession() {
   toggleMobileDrawer(false);
   renderWorkspace();
   syncVaultLockUI();
+  if (window.AegisDeviceSync) {
+    window.AegisDeviceSync.renderUI();
+  }
   showToast('Vault locked. Encryption key wiped from memory.', 'info');
+}
+
+// ===========================================================================
+// AUTOMATIC DEVICE & LIVE DOWNLOADS SYNC WRAPPERS
+// ===========================================================================
+function connectAutoSyncFolder() {
+  if (window.AegisDeviceSync) window.AegisDeviceSync.connectDeviceFolder();
+}
+
+function resumeAutoSyncFolders() {
+  if (window.AegisDeviceSync) window.AegisDeviceSync.resumeSavedFolders();
+}
+
+function toggleAutoSyncPause() {
+  if (window.AegisDeviceSync) window.AegisDeviceSync.togglePause();
+}
+
+function toggleAutoSyncRename(checked) {
+  if (window.AegisDeviceSync) window.AegisDeviceSync.toggleAutoRename(checked);
+}
+
+function rescanAutoSyncFiles() {
+  if (window.AegisDeviceSync) window.AegisDeviceSync.rescanAll();
+}
+
+function removeAutoSyncFolder(id) {
+  if (window.AegisDeviceSync) window.AegisDeviceSync.removeFolder(id);
+}
+
+function handleFallbackDirectorySelect(event) {
+  if (window.AegisDeviceSync) window.AegisDeviceSync.handleFallbackDirectoryInput(event);
 }
 
 function openVaultInfoModal() {
